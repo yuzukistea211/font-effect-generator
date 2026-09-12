@@ -24,16 +24,16 @@ interface PreviewDashboardProps {
 }
 
 const PANGRAMS = [
-  { label: 'SPHINX', text: 'Sphinx of black quartz, judge my vow.' },
-  { label: 'QUICK FOX', text: 'The quick brown fox jumps over the lazy dog.' },
-  { label: 'LIQUOR JUGS', text: 'Pack my box with five dozen liquor jugs.' },
+  { label: 'SPHINX', text: 'Sphinx of black quartz, judge my vow.\n黑色石英獅身人面像，評判我的誓言。' },
+  { label: 'QUICK FOX', text: 'The quick brown fox jumps over the lazy dog.\n敏捷的棕色狐狸跨過懶狗。' },
+  { label: 'LIQUOR JUGS', text: 'Pack my box with five dozen liquor jugs.\n用五打酒壇裝滿我的箱子。' },
   {
     label: 'GLYPH SET',
     text: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789 (!@#$%&*?)',
   },
   {
     label: 'HEADLINE',
-    text: 'EXPERIMENTAL TYPOGRAPHY\nAlgorithmic Noise & Pixelated Forms',
+    text: 'EXPERIMENTAL TYPOGRAPHY\nAlgorithmic Noise & Pixelated Forms\n實驗性排版\n演算法雜訊與像素化形式',
   },
 ];
 

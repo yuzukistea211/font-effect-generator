@@ -101,43 +101,6 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
         </label>
       </div>
 
-      {/* Live Preview Feedback Banner */}
-      <div
-        className={`px-3 py-2 border font-mono text-xs flex items-center justify-between transition-colors ${
-          livePreviewEnabled
-            ? 'bg-white border-zinc-900 text-zinc-900'
-            : 'bg-zinc-100/70 border-zinc-300 text-zinc-500'
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          <span
-            className={`w-2 h-2 shrink-0 ${
-              livePreviewEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
-            }`}
-          />
-          <span className="font-bold uppercase tracking-wider text-[11px]">
-            {livePreviewEnabled
-              ? `Live Preview: ${config.mode.toUpperCase()}`
-              : 'Live Preview Disabled'}
-          </span>
-          {currentGlyph && (
-            <span className="text-zinc-500 text-[10px] hidden sm:inline">
-              on '{currentGlyph.unicode ? String.fromCharCode(currentGlyph.unicode) : currentGlyph.name}'
-            </span>
-          )}
-        </div>
-
-        {livePreviewEnabled && onApplyPreviewToCurrentGlyph && currentGlyph && (
-          <button
-            onClick={onApplyPreviewToCurrentGlyph}
-            className="px-2 py-0.5 border border-zinc-900 bg-zinc-900 hover:bg-zinc-800 text-white text-[10px] font-bold uppercase transition-colors"
-            title="Commit live procedural preview to this glyph"
-          >
-            Apply to Active Glyph
-          </button>
-        )}
-      </div>
-
       {/* Mode Selector Tabs (Sharp Rectangles) */}
       <div className="grid grid-cols-5 border border-zinc-300 bg-white">
         <button
@@ -348,14 +311,35 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
               </div>
             </div>
 
-            <div className="flex items-end">
-              <button
-                onClick={randomizeSeed}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors"
-              >
-                <Dices className="w-3.5 h-3.5" />
-                <span>SEED: {config.perlin.seed}</span>
-              </button>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Random Seed</span>
+                <span className="text-zinc-900 font-bold">{config.perlin.seed}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={config.perlin.seed}
+                  onChange={(e) =>
+                    onChangeConfig({
+                      ...config,
+                      perlin: {
+                        ...config.perlin,
+                        seed: parseInt(e.target.value, 10) || 0,
+                      },
+                    })
+                  }
+                  className="w-full px-2 py-1 border border-zinc-300 bg-zinc-50 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                />
+                <button
+                  onClick={randomizeSeed}
+                  className="px-2.5 py-1 flex items-center justify-center gap-1 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors shrink-0"
+                  title="Roll random seed"
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                  <span>Roll</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -555,13 +539,34 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
             </div>
 
             <div className="sm:col-span-2">
-              <button
-                onClick={randomizeSeed}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors"
-              >
-                <Dices className="w-3.5 h-3.5" />
-                <span>RANDOMIZE SLICES ({config.glitch.seed})</span>
-              </button>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Random Seed</span>
+                <span className="text-zinc-900 font-bold">{config.glitch.seed}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={config.glitch.seed}
+                  onChange={(e) =>
+                    onChangeConfig({
+                      ...config,
+                      glitch: {
+                        ...config.glitch,
+                        seed: parseInt(e.target.value, 10) || 0,
+                      },
+                    })
+                  }
+                  className="w-full px-2 py-1 border border-zinc-300 bg-zinc-50 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                />
+                <button
+                  onClick={randomizeSeed}
+                  className="px-3 py-1 flex items-center justify-center gap-1.5 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors shrink-0"
+                  title="Roll random seed"
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                  <span>Roll</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -610,6 +615,37 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
                 className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
               />
             </div>
+
+            <div className="sm:col-span-2">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Random Seed</span>
+                <span className="text-zinc-900 font-bold">{config.melt.seed}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={config.melt.seed}
+                  onChange={(e) =>
+                    onChangeConfig({
+                      ...config,
+                      melt: {
+                        ...config.melt,
+                        seed: parseInt(e.target.value, 10) || 0,
+                      },
+                    })
+                  }
+                  className="w-full px-2 py-1 border border-zinc-300 bg-zinc-50 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                />
+                <button
+                  onClick={randomizeSeed}
+                  className="px-3 py-1 flex items-center justify-center gap-1.5 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors shrink-0"
+                  title="Roll random seed"
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                  <span>Roll</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -626,6 +662,7 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
         <div className="flex flex-wrap gap-1">
           {(
             [
+              { id: 'current', label: 'CURRENT' },
               { id: 'all', label: 'ALL' },
               { id: 'latin', label: 'BASIC' },
               { id: 'uppercase', label: 'A-Z' },
@@ -644,6 +681,11 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
               }`}
             >
               {scopeOption.label}
+              {scopeOption.id === 'current' && currentGlyph && (
+                <span className="ml-1 opacity-70">
+                  ('{currentGlyph.unicode ? String.fromCharCode(currentGlyph.unicode) : currentGlyph.name}')
+                </span>
+              )}
             </button>
           ))}
           {config.scope === 'custom' && (
@@ -759,7 +801,11 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
             className="flex items-center justify-center gap-2 px-5 py-2 text-xs font-mono font-bold uppercase bg-zinc-900 hover:bg-zinc-800 disabled:opacity-40 text-white transition-all active:scale-[0.99]"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Apply Batch Styling</span>
+            <span>
+              {config.scope === 'current'
+                ? `Apply to Current Glyph ('${currentGlyph?.unicode ? String.fromCharCode(currentGlyph.unicode) : currentGlyph?.name || ''}')`
+                : `Apply to ${targetGlyphCount} Glyphs`}
+            </span>
           </button>
         )}
       </div>

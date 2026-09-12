@@ -6,7 +6,7 @@ export type GlyphData = Glyph;
 
 export type StylingMode = 'perlin' | 'pixelate' | 'crystalline' | 'glitch' | 'melt';
 
-export type BatchScope = 'all' | 'latin' | 'uppercase' | 'lowercase' | 'numbers' | 'custom';
+export type BatchScope = 'all' | 'latin' | 'uppercase' | 'lowercase' | 'numbers' | 'custom' | 'current';
 
 export interface PerlinConfig {
   scale: number; // noise frequency, e.g. 0.005 to 0.05

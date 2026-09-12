@@ -35,24 +35,31 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
+const getAssetUrl = (relPath: string) => {
+  const base = import.meta.env.BASE_URL || './';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  const cleanPath = relPath.startsWith('/') ? relPath.slice(1) : relPath;
+  return `${cleanBase}${cleanPath}`;
+};
+
 const SAMPLE_FONTS = [
   {
     id: 'nimbus-sans',
     name: 'Nimbus Sans',
     format: 'OTF',
-    path: '/sample-fonts/NimbusSans.otf',
+    path: getAssetUrl('sample-fonts/NimbusSans.otf'),
   },
   {
     id: 'liberation-serif',
     name: 'Liberation Serif',
     format: 'TTF',
-    path: '/sample-fonts/LiberationSerif.ttf',
+    path: getAssetUrl('sample-fonts/LiberationSerif.ttf'),
   },
   {
     id: 'nimbus-mono',
     name: 'Nimbus Mono Bold',
     format: 'OTF',
-    path: '/sample-fonts/NimbusMonoBold.otf',
+    path: getAssetUrl('sample-fonts/NimbusMonoBold.otf'),
   },
 ];
 
@@ -93,8 +100,8 @@ const DEFAULT_BATCH_CONFIG: BatchStyleConfig = {
 };
 
 const DEFAULT_PREVIEW_SETTINGS: PreviewSettings = {
-  text: 'Sphinx of black quartz, judge my vow.\n0123456789 • PERLIN & PIXEL',
-  fontSize: 48,
+  text: 'Sphinx of black quartz, judge my vow.\n黑色石英獅身人面像，請評判我的誓言。\n0123456789 • PERLIN & PIXEL',
+  fontSize: 24,
   lineHeight: 1.3,
   letterSpacing: 0,
   textAlign: 'left',
@@ -363,15 +370,20 @@ export default function App() {
 
   const targetGlyphs = useMemo(() => {
     if (!originalFont) return [];
+    if (batchConfig.scope === 'current') {
+      if (selectedGlyphIndex === null) return [];
+      const g = originalFont.glyphs.get(selectedGlyphIndex);
+      return g && g.path && g.path.commands && g.path.commands.length > 0 ? [g] : [];
+    }
     const matched: opentype.Glyph[] = [];
     for (let i = 0; i < originalFont.glyphs.length; i++) {
       const g = originalFont.glyphs.get(i);
-      if (isGlyphInScope(g, batchConfig.scope, batchConfig.customChars)) {
+      if (isGlyphInScope(g, batchConfig.scope, batchConfig.customChars, selectedGlyphIndex)) {
         matched.push(g);
       }
     }
     return matched;
-  }, [originalFont, batchConfig.scope, batchConfig.customChars]);
+  }, [originalFont, batchConfig.scope, batchConfig.customChars, selectedGlyphIndex]);
 
   // Batch styling execution
   const handleApplyBatch = useCallback(async () => {
@@ -413,13 +425,18 @@ export default function App() {
         try {
           await injectLiveFontFace(font, 'StylizedFontLive');
           setHasUnsavedChanges(true);
+          setGlyphRevision((v) => v + 1);
           setIsProcessing(false);
           confetti({
             particleCount: 50,
             spread: 60,
             origin: { y: 0.8 },
           });
-          showToast(`Successfully batch styled ${total} glyphs!`);
+          const successMsg =
+            batchConfig.scope === 'current'
+              ? `Successfully styled glyph '${currentChar}' with ${batchConfig.mode.toUpperCase()}!`
+              : `Successfully batch styled ${total} glyphs!`;
+          showToast(successMsg);
         } catch (err) {
           console.error('Error refreshing font after batch:', err);
           setIsProcessing(false);

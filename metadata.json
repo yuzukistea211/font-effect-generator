@@ -2,5 +2,7 @@
   "name": "OTF Font Editor",
   "description": "OTF and TTF font editor featuring automatic batch styling for converting smooth lines to pixelated or jagged contours using Perlin noise, interactive glyph vector editing, and real-time preview dashboard.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -615,10 +615,17 @@ function transformMelt(path: opentype.Path, cfg: MeltConfig): opentype.Path {
 export function isGlyphInScope(
   glyph: opentype.Glyph,
   scope: BatchStyleConfig['scope'],
-  customChars: string
+  customChars: string,
+  currentGlyphIndex?: number | null
 ): boolean {
   if (!glyph || !glyph.path || glyph.path.commands.length === 0) {
     return false;
+  }
+
+  if (scope === 'current') {
+    return currentGlyphIndex !== undefined && currentGlyphIndex !== null
+      ? glyph.index === currentGlyphIndex
+      : false;
   }
 
   const unicode = glyph.unicode;
