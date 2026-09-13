@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
 import {
-  Zap,
-  Grid,
-  Diamond,
-  Tv,
-  Droplets,
   Dices,
   Play,
   Scissors,
   Layers,
+  Minimize2,
+  Tv,
 } from 'lucide-react';
-import type { BatchStyleConfig, StylingMode, BatchScope, GlyphData } from '../types';
+import type { BatchStyleConfig, BatchScope, GlyphData, StylingMode } from '../types';
 import { STYLE_PRESETS } from '../utils/fontStyling';
 
 interface BatchProcessingPanelProps {
@@ -19,6 +16,8 @@ interface BatchProcessingPanelProps {
   onApplyBatch: () => void;
   onBatchMergeNodes?: (distanceThreshold: number) => void;
   onMergeCurrentGlyph?: (distanceThreshold: number) => void;
+  onBatchSimplifyPath?: (epsilon: number) => void;
+  onSimplifyCurrentGlyph?: (epsilon: number) => void;
   currentGlyph?: GlyphData | null;
   onApplyPreviewToCurrentGlyph?: () => void;
   isProcessing: boolean;
@@ -34,6 +33,8 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
   onApplyBatch,
   onBatchMergeNodes,
   onMergeCurrentGlyph,
+  onBatchSimplifyPath,
+  onSimplifyCurrentGlyph,
   currentGlyph,
   onApplyPreviewToCurrentGlyph,
   isProcessing,
@@ -43,13 +44,14 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
   onToggleLivePreview,
 }) => {
   const [mergeDistance, setMergeDistance] = useState<number>(15);
-
-  const handleModeChange = (mode: StylingMode) => {
-    onChangeConfig({ ...config, mode });
-  };
+  const [rdpEpsilon, setRdpEpsilon] = useState<number>(3.0);
 
   const handleScopeChange = (scope: BatchScope) => {
     onChangeConfig({ ...config, scope });
+  };
+
+  const handleModeChange = (mode: StylingMode) => {
+    onChangeConfig({ ...config, mode });
   };
 
   const applyPreset = (presetId: string) => {
@@ -64,6 +66,7 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
       crystalline: preset.config.crystalline ? { ...config.crystalline, ...preset.config.crystalline } : config.crystalline,
       glitch: preset.config.glitch ? { ...config.glitch, ...preset.config.glitch } : config.glitch,
       melt: preset.config.melt ? { ...config.melt, ...preset.config.melt } : config.melt,
+      crt: preset.config.crt ? { ...config.crt, ...preset.config.crt } : config.crt,
     });
   };
 
@@ -74,6 +77,16 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
       perlin: { ...config.perlin, seed: newSeed },
       glitch: { ...config.glitch, seed: newSeed },
       melt: { ...config.melt, seed: newSeed },
+      crt: {
+        ...(config.crt || {
+          scanlineHeight: 28,
+          curvature: 22,
+          rasterJitter: 10,
+          interlaceShift: 12,
+          beamRoll: 8,
+        }),
+        seed: newSeed,
+      },
     });
   };
 
@@ -101,74 +114,6 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
         </label>
       </div>
 
-      {/* Mode Selector Tabs (Sharp Rectangles) */}
-      <div className="grid grid-cols-5 border border-zinc-300 bg-white">
-        <button
-          onClick={() => handleModeChange('perlin')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 text-xs font-mono border-r border-zinc-300 transition-all ${
-            config.mode === 'perlin'
-              ? 'bg-zinc-900 text-white font-bold'
-              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-          }`}
-          title="Perlin Noise"
-        >
-          <Zap className="w-3.5 h-3.5" />
-          <span className="text-[11px] truncate">Perlin</span>
-        </button>
-
-        <button
-          onClick={() => handleModeChange('pixelate')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 text-xs font-mono border-r border-zinc-300 transition-all ${
-            config.mode === 'pixelate'
-              ? 'bg-zinc-900 text-white font-bold'
-              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-          }`}
-          title="8-Bit Pixelate"
-        >
-          <Grid className="w-3.5 h-3.5" />
-          <span className="text-[11px] truncate">Pixel</span>
-        </button>
-
-        <button
-          onClick={() => handleModeChange('crystalline')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 text-xs font-mono border-r border-zinc-300 transition-all ${
-            config.mode === 'crystalline'
-              ? 'bg-zinc-900 text-white font-bold'
-              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-          }`}
-          title="Crystalline Facets"
-        >
-          <Diamond className="w-3.5 h-3.5" />
-          <span className="text-[11px] truncate">Crystal</span>
-        </button>
-
-        <button
-          onClick={() => handleModeChange('glitch')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 text-xs font-mono border-r border-zinc-300 transition-all ${
-            config.mode === 'glitch'
-              ? 'bg-zinc-900 text-white font-bold'
-              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-          }`}
-          title="Scanline Glitch"
-        >
-          <Tv className="w-3.5 h-3.5" />
-          <span className="text-[11px] truncate">Glitch</span>
-        </button>
-
-        <button
-          onClick={() => handleModeChange('melt')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 text-xs font-mono transition-all ${
-            config.mode === 'melt'
-              ? 'bg-zinc-900 text-white font-bold'
-              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-          }`}
-          title="Acid Melt"
-        >
-          <Droplets className="w-3.5 h-3.5" />
-          <span className="text-[11px] truncate">Melt</span>
-        </button>
-      </div>
-
       {/* Presets Bar */}
       <div className="flex flex-col gap-1.5">
         <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
@@ -189,6 +134,43 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
                 title={preset.description}
               >
                 {preset.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Engine Algorithm Mode Selector */}
+      <div className="flex flex-col gap-1.5">
+        <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 flex items-center justify-between">
+          <span>Styling Algorithm</span>
+          <span className="text-zinc-700 font-bold uppercase">{config.mode}</span>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+          {(
+            [
+              { id: 'perlin' as const, label: 'PERLIN' },
+              { id: 'pixelate' as const, label: 'PIXEL' },
+              { id: 'crystalline' as const, label: 'POLY' },
+              { id: 'glitch' as const, label: 'GLITCH' },
+              { id: 'melt' as const, label: 'MELT' },
+              { id: 'crt' as const, label: 'CRT', icon: Tv },
+            ] as Array<{ id: StylingMode; label: string; icon?: React.ComponentType<{ className?: string }> }>
+          ).map((m) => {
+            const isMatch = config.mode === m.id;
+            const IconComp = m.icon;
+            return (
+              <button
+                key={m.id}
+                onClick={() => handleModeChange(m.id)}
+                className={`flex items-center justify-center gap-1 py-1.5 px-2 text-[11px] font-mono border transition-all ${
+                  isMatch
+                    ? 'border-zinc-900 bg-zinc-900 text-white font-bold shadow-xs'
+                    : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100'
+                }`}
+              >
+                {IconComp && <IconComp className="w-3 h-3" />}
+                <span>{m.label}</span>
               </button>
             );
           })}
@@ -648,6 +630,204 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
             </div>
           </div>
         )}
+
+        {/* CRT Monitor Controls */}
+        {config.mode === 'crt' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Scanline Pitch</span>
+                <span className="text-zinc-900 font-bold">{config.crt?.scanlineHeight ?? 28}px</span>
+              </div>
+              <input
+                type="range"
+                min="10"
+                max="60"
+                step="2"
+                value={config.crt?.scanlineHeight ?? 28}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    crt: {
+                      ...(config.crt || {
+                        scanlineHeight: 28,
+                        curvature: 22,
+                        rasterJitter: 10,
+                        interlaceShift: 12,
+                        beamRoll: 8,
+                        seed: 42,
+                      }),
+                      scanlineHeight: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Tube Curvature (Barrel)</span>
+                <span className="text-zinc-900 font-bold">{config.crt?.curvature ?? 22}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="50"
+                step="2"
+                value={config.crt?.curvature ?? 22}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    crt: {
+                      ...(config.crt || {
+                        scanlineHeight: 28,
+                        curvature: 22,
+                        rasterJitter: 10,
+                        interlaceShift: 12,
+                        beamRoll: 8,
+                        seed: 42,
+                      }),
+                      curvature: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Interlace Line Shift</span>
+                <span className="text-zinc-900 font-bold">{config.crt?.interlaceShift ?? 12}px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="30"
+                step="1"
+                value={config.crt?.interlaceShift ?? 12}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    crt: {
+                      ...(config.crt || {
+                        scanlineHeight: 28,
+                        curvature: 22,
+                        rasterJitter: 10,
+                        interlaceShift: 12,
+                        beamRoll: 8,
+                        seed: 42,
+                      }),
+                      interlaceShift: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Beam Sync Jitter</span>
+                <span className="text-zinc-900 font-bold">{config.crt?.rasterJitter ?? 10}px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="35"
+                step="1"
+                value={config.crt?.rasterJitter ?? 10}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    crt: {
+                      ...(config.crt || {
+                        scanlineHeight: 28,
+                        curvature: 22,
+                        rasterJitter: 10,
+                        interlaceShift: 12,
+                        beamRoll: 8,
+                        seed: 42,
+                      }),
+                      rasterJitter: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Vertical Sync Roll</span>
+                <span className="text-zinc-900 font-bold">{config.crt?.beamRoll ?? 8}px</span>
+              </div>
+              <input
+                type="range"
+                min="-40"
+                max="40"
+                step="2"
+                value={config.crt?.beamRoll ?? 8}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    crt: {
+                      ...(config.crt || {
+                        scanlineHeight: 28,
+                        curvature: 22,
+                        rasterJitter: 10,
+                        interlaceShift: 12,
+                        beamRoll: 8,
+                        seed: 42,
+                      }),
+                      beamRoll: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Random Seed</span>
+                <span className="text-zinc-900 font-bold">{config.crt?.seed ?? 42}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={config.crt?.seed ?? 42}
+                  onChange={(e) =>
+                    onChangeConfig({
+                      ...config,
+                      crt: {
+                        ...(config.crt || {
+                          scanlineHeight: 28,
+                          curvature: 22,
+                          rasterJitter: 10,
+                          interlaceShift: 12,
+                          beamRoll: 8,
+                          seed: 42,
+                        }),
+                        seed: parseInt(e.target.value, 10) || 0,
+                      },
+                    })
+                  }
+                  className="w-full px-2 py-1 border border-zinc-300 bg-zinc-50 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                />
+                <button
+                  onClick={randomizeSeed}
+                  className="px-3 py-1 flex items-center justify-center gap-1.5 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors shrink-0"
+                  title="Roll random seed"
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                  <span>Roll</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Target Scope Section */}
@@ -697,6 +877,90 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
               className="bg-white border border-zinc-300 px-2 py-1 text-xs text-zinc-900 focus:outline-none focus:border-zinc-900 w-28 font-mono"
             />
           )}
+        </div>
+      </div>
+
+      {/* Dedicated Path Simplify Section (Ramer-Douglas-Peucker) */}
+      <div className="border border-zinc-300 bg-white p-4 flex flex-col gap-3 font-mono text-xs">
+        <div className="flex items-center justify-between pb-2 border-b border-zinc-200">
+          <div className="flex items-center gap-2">
+            <Minimize2 className="w-3.5 h-3.5 text-zinc-900" />
+            <span className="font-bold uppercase tracking-wider text-zinc-900 text-xs">
+              Path Simplify
+            </span>
+          </div>
+          <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
+            Ramer-Douglas-Peucker (ε: {rdpEpsilon}px)
+          </span>
+        </div>
+
+        <p className="text-[11px] text-zinc-500 leading-relaxed">
+          Uses the Ramer-Douglas-Peucker algorithm to reduce node count on complex glyphs by decimating redundant and collinear contour vertices within tolerance ε.
+        </p>
+
+        {/* Epsilon Slider & Quick Presets */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 flex items-center gap-2">
+            <span className="text-zinc-500 text-xs font-serif italic">ε</span>
+            <input
+              type="range"
+              min="0.5"
+              max="20"
+              step="0.5"
+              value={rdpEpsilon}
+              onChange={(e) => setRdpEpsilon(Number(e.target.value))}
+              className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+            />
+            <span className="text-zinc-900 font-bold text-xs min-w-[40px] text-right">
+              {rdpEpsilon}px
+            </span>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex border border-zinc-300">
+            {[1, 2, 3, 5, 8, 12].map((eps) => (
+              <button
+                key={eps}
+                onClick={() => setRdpEpsilon(eps)}
+                className={`px-2 py-0.5 text-[10px] border-r last:border-r-0 border-zinc-300 transition-colors ${
+                  rdpEpsilon === eps
+                    ? 'bg-zinc-900 text-white font-bold'
+                    : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100'
+                }`}
+              >
+                {eps}px
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Direct Action Buttons: Path Simplify Active Glyph & Path Simplify Scope Glyphs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-zinc-200">
+          <button
+            onClick={() => onSimplifyCurrentGlyph?.(rdpEpsilon)}
+            disabled={!currentGlyph || isProcessing}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-zinc-900 bg-white hover:bg-zinc-100 text-zinc-900 font-bold text-[11px] uppercase transition-colors disabled:opacity-40"
+            title={
+              currentGlyph
+                ? `Simplify path with Ramer-Douglas-Peucker on active glyph '${currentGlyph.unicode ? String.fromCharCode(currentGlyph.unicode) : currentGlyph.name}'`
+                : 'Select a glyph to simplify'
+            }
+          >
+            <Minimize2 className="w-3 h-3" />
+            <span>
+              Path Simplify {currentGlyph ? `('${currentGlyph.unicode ? String.fromCharCode(currentGlyph.unicode) : currentGlyph.name}')` : ''}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onBatchSimplifyPath?.(rdpEpsilon)}
+            disabled={isProcessing || targetGlyphCount === 0}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[11px] uppercase transition-colors disabled:opacity-40"
+            title="Simplify paths with Ramer-Douglas-Peucker across all glyphs in target scope"
+          >
+            <Layers className="w-3 h-3" />
+            <span>Path Simplify Scope ({targetGlyphCount})</span>
+          </button>
         </div>
       </div>
 

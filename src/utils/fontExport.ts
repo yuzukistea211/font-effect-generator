@@ -3,6 +3,117 @@ import * as opentype from 'opentype.js';
 let activeBlobUrl: string | null = null;
 
 /**
+ * Sanitizes OpenType GSUB and GPOS layout tables.
+ * opentype.js asserts that every script record in GSUB/GPOS has a valid defaultLangSys.
+ * If a font has scripts (e.g. 'cyrl', 'latn') with defaultLangSys missing, opentype.js throws:
+ * "Unable to write GSUB: script [tag] has no default language system."
+ * This helper injects a compliant empty defaultLangSys to prevent serialization errors.
+ */
+export function sanitizeFontLayoutTables(font: opentype.Font): void {
+  if (!font || !font.tables) return;
+
+  const tableNames = ['gsub', 'gpos'] as const;
+  for (const tableName of tableNames) {
+    const table = (font.tables as any)[tableName];
+    if (table && Array.isArray(table.scripts)) {
+      for (const scriptRecord of table.scripts) {
+        if (scriptRecord && scriptRecord.script) {
+          if (!scriptRecord.script.defaultLangSys) {
+            scriptRecord.script.defaultLangSys = {
+              lookupOrder: 0,
+              reqFeatureIndex: 65535,
+              featureIndexes: [],
+            };
+          } else {
+            if (typeof scriptRecord.script.defaultLangSys.reqFeatureIndex !== 'number') {
+              scriptRecord.script.defaultLangSys.reqFeatureIndex = 65535;
+            }
+            if (!Array.isArray(scriptRecord.script.defaultLangSys.featureIndexes)) {
+              scriptRecord.script.defaultLangSys.featureIndexes = [];
+            }
+          }
+          if (!Array.isArray(scriptRecord.script.langSysRecords)) {
+            scriptRecord.script.langSysRecords = [];
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Safely converts an opentype.Font instance to an ArrayBuffer with multi-tier fallbacks.
+ * Prevents crashes caused by GSUB script assertion errors or unsupported OpenType tables.
+ */
+export function safeFontToArrayBuffer(font: opentype.Font): ArrayBuffer {
+  // Step 1: Sanitize known script layout issues
+  sanitizeFontLayoutTables(font);
+
+  // Attempt standard serialization
+  try {
+    return font.toArrayBuffer();
+  } catch (err1: any) {
+    console.warn(
+      '[FontExport] Standard toArrayBuffer failed, attempting serialization without GSUB/GPOS:',
+      err1?.message
+    );
+  }
+
+  // Step 2: If GSUB/GPOS has unsupported lookup types or other writing bugs in opentype.js,
+  // temporarily strip them for buffer generation so rendering and export succeed
+  const savedGsub = (font.tables as any).gsub;
+  const savedGpos = (font.tables as any).gpos;
+  const savedGdef = (font.tables as any).gdef;
+
+  try {
+    delete (font.tables as any).gsub;
+    delete (font.tables as any).gpos;
+    delete (font.tables as any).gdef;
+    const buf = font.toArrayBuffer();
+
+    // Restore tables on the in-memory font instance
+    if (savedGsub) (font.tables as any).gsub = savedGsub;
+    if (savedGpos) (font.tables as any).gpos = savedGpos;
+    if (savedGdef) (font.tables as any).gdef = savedGdef;
+
+    return buf;
+  } catch (err2: any) {
+    // Restore tables
+    if (savedGsub) (font.tables as any).gsub = savedGsub;
+    if (savedGpos) (font.tables as any).gpos = savedGpos;
+    if (savedGdef) (font.tables as any).gdef = savedGdef;
+
+    console.warn(
+      '[FontExport] Fallback without GSUB/GPOS failed, constructing clean Font instance:',
+      err2?.message
+    );
+  }
+
+  // Step 3: Minimal reconstructed Font instance containing only essential glyphs and metrics
+  const glyphList: opentype.Glyph[] = [];
+  for (let i = 0; i < font.glyphs.length; i++) {
+    glyphList.push(font.glyphs.get(i));
+  }
+
+  const cleanFont = new opentype.Font({
+    familyName:
+      font.getEnglishName('fontFamily') ||
+      font.names?.fontFamily?.en ||
+      'StylizedFont',
+    styleName:
+      font.getEnglishName('fontSubfamily') ||
+      font.names?.fontSubfamily?.en ||
+      'Regular',
+    unitsPerEm: font.unitsPerEm || 1000,
+    ascender: font.ascender || 800,
+    descender: font.descender || -200,
+    glyphs: glyphList,
+  });
+
+  return cleanFont.toArrayBuffer();
+}
+
+/**
  * Injects a live @font-face into the document for real-time CSS typography rendering.
  */
 export async function injectLiveFontFace(
@@ -10,7 +121,7 @@ export async function injectLiveFontFace(
   familyName: string = 'StylizedFontLive'
 ): Promise<string> {
   try {
-    const buffer = font.toArrayBuffer();
+    const buffer = safeFontToArrayBuffer(font);
     const blob = new Blob([buffer], { type: 'font/opentype' });
     const newUrl = URL.createObjectURL(blob);
 
@@ -67,7 +178,7 @@ export function downloadFontFile(
       glyphs: glyphList,
     });
 
-    const buffer = exportFontObj.toArrayBuffer();
+    const buffer = safeFontToArrayBuffer(exportFontObj);
     const mimeType = format === 'otf' ? 'font/otf' : 'font/ttf';
     const blob = new Blob([buffer], { type: mimeType });
     const url = URL.createObjectURL(blob);

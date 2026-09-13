@@ -7,6 +7,7 @@ interface GlyphGridProps {
   selectedGlyphIndex: number | null;
   onSelectGlyphIndex: (index: number) => void;
   targetScopeCharFilter?: (glyph: opentype.Glyph) => boolean;
+  glyphRevision?: number;
 }
 
 const ITEMS_PER_PAGE = 72;
@@ -15,6 +16,7 @@ export const GlyphGrid: React.FC<GlyphGridProps> = ({
   font,
   selectedGlyphIndex,
   onSelectGlyphIndex,
+  glyphRevision = 0,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState<
@@ -45,7 +47,7 @@ export const GlyphGrid: React.FC<GlyphGridProps> = ({
       });
     }
     return items;
-  }, [font]);
+  }, [font, glyphRevision]);
 
   // Filtered list
   const filteredGlyphs = useMemo(() => {

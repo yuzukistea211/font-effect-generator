@@ -4,7 +4,7 @@ export type FontFormat = 'otf' | 'ttf' | 'woff';
 
 export type GlyphData = Glyph;
 
-export type StylingMode = 'perlin' | 'pixelate' | 'crystalline' | 'glitch' | 'melt';
+export type StylingMode = 'perlin' | 'pixelate' | 'crystalline' | 'glitch' | 'melt' | 'crt';
 
 export type BatchScope = 'all' | 'latin' | 'uppercase' | 'lowercase' | 'numbers' | 'custom' | 'current';
 
@@ -43,6 +43,15 @@ export interface MeltConfig {
   seed: number;
 }
 
+export interface CRTConfig {
+  scanlineHeight: number; // scanline thickness/pitch in font units, e.g. 12 to 60
+  curvature: number; // CRT barrel tube curvature bulge, 0 to 50
+  rasterJitter: number; // horizontal electron beam sync jitter, 0 to 35
+  interlaceShift: number; // alternating odd/even raster line offset, 0 to 30
+  beamRoll: number; // vertical sync tracking hum / roll distortion, -40 to 40
+  seed: number;
+}
+
 export interface BatchStyleConfig {
   mode: StylingMode;
   scope: BatchScope;
@@ -52,6 +61,7 @@ export interface BatchStyleConfig {
   crystalline: CrystallineConfig;
   glitch: GlitchConfig;
   melt: MeltConfig;
+  crt: CRTConfig;
 }
 
 export interface FontMetadata {

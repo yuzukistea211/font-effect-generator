@@ -26,8 +26,9 @@ import {
 import {
   injectLiveFontFace,
   downloadFontFile,
+  sanitizeFontLayoutTables,
 } from './utils/fontExport';
-import { mergePathPointsByDistance } from './utils/pointMerger';
+import { mergePathPointsByDistance, simplifyPathRDP } from './utils/pointMerger';
 import {
   Upload,
   AlertCircle,
@@ -97,6 +98,14 @@ const DEFAULT_BATCH_CONFIG: BatchStyleConfig = {
     droopThreshold: 0,
     seed: 42,
   },
+  crt: {
+    scanlineHeight: 28,
+    curvature: 22,
+    rasterJitter: 10,
+    interlaceShift: 12,
+    beamRoll: 8,
+    seed: 42,
+  },
 };
 
 const DEFAULT_PREVIEW_SETTINGS: PreviewSettings = {
@@ -142,6 +151,15 @@ export default function App() {
 
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const [glyphRevision, setGlyphRevision] = useState<number>(0);
+  const [liveFontFamily, setLiveFontFamily] = useState<string>('StylizedFontLive');
+
+  const refreshLiveFontFace = useCallback(async (fontToInject: opentype.Font) => {
+    sanitizeFontLayoutTables(fontToInject);
+    const newFamily = `StylizedFontLive_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    await injectLiveFontFace(fontToInject, newFamily);
+    setLiveFontFamily(newFamily);
+    return newFamily;
+  }, []);
 
   // Metadata
   const [metadata, setMetadata] = useState<FontMetadata>({
@@ -188,6 +206,8 @@ export default function App() {
 
         const parsedFont = opentype.parse(buffer);
         const origParsedFont = opentype.parse(buffer.slice(0));
+        sanitizeFontLayoutTables(parsedFont);
+        sanitizeFontLayoutTables(origParsedFont);
 
         setFont(parsedFont);
         setOriginalFont(origParsedFont);
@@ -244,7 +264,7 @@ export default function App() {
 
         // Inject live font faces
         await injectLiveFontFace(origParsedFont, 'OriginalFontLive');
-        await injectLiveFontFace(parsedFont, 'StylizedFontLive');
+        await refreshLiveFontFace(parsedFont);
 
         setIsLoadingFont(false);
       } catch (err: any) {
@@ -253,7 +273,7 @@ export default function App() {
         setIsLoadingFont(false);
       }
     },
-    []
+    [refreshLiveFontFace]
   );
 
   // Load sample font
@@ -331,7 +351,7 @@ export default function App() {
   // Live procedural preview computed for the active glyph
   const previewPath = useMemo(() => {
     if (!livePreviewEnabled) return null;
-    const baseGlyph = currentOriginalGlyph || currentGlyph;
+    const baseGlyph = currentGlyph || currentOriginalGlyph;
     if (!baseGlyph?.path || !baseGlyph.path.commands || baseGlyph.path.commands.length === 0) {
       return null;
     }
@@ -341,7 +361,7 @@ export default function App() {
       console.error('Live preview transform error:', err);
       return null;
     }
-  }, [livePreviewEnabled, currentOriginalGlyph, currentGlyph, batchConfig]);
+  }, [livePreviewEnabled, currentGlyph, currentOriginalGlyph, batchConfig]);
 
   const previewPathData = useMemo(() => {
     if (!previewPath) return null;
@@ -362,32 +382,32 @@ export default function App() {
       setHasUnsavedChanges(true);
       setFont(font);
       setGlyphRevision((v) => v + 1);
-      await injectLiveFontFace(font, 'StylizedFontLive');
+      await refreshLiveFontFace(font);
       const char = g.unicode ? String.fromCharCode(g.unicode) : g.name;
       showToast(`Applied ${batchConfig.mode.toUpperCase()} procedural style to '${char}'`);
     }
-  }, [font, currentGlyph, previewPath, batchConfig.mode, showToast]);
+  }, [font, currentGlyph, previewPath, batchConfig.mode, refreshLiveFontFace, showToast]);
 
   const targetGlyphs = useMemo(() => {
-    if (!originalFont) return [];
+    if (!font) return [];
     if (batchConfig.scope === 'current') {
       if (selectedGlyphIndex === null) return [];
-      const g = originalFont.glyphs.get(selectedGlyphIndex);
+      const g = font.glyphs.get(selectedGlyphIndex);
       return g && g.path && g.path.commands && g.path.commands.length > 0 ? [g] : [];
     }
     const matched: opentype.Glyph[] = [];
-    for (let i = 0; i < originalFont.glyphs.length; i++) {
-      const g = originalFont.glyphs.get(i);
+    for (let i = 0; i < font.glyphs.length; i++) {
+      const g = font.glyphs.get(i);
       if (isGlyphInScope(g, batchConfig.scope, batchConfig.customChars, selectedGlyphIndex)) {
         matched.push(g);
       }
     }
     return matched;
-  }, [originalFont, batchConfig.scope, batchConfig.customChars, selectedGlyphIndex]);
+  }, [font, batchConfig.scope, batchConfig.customChars, selectedGlyphIndex, glyphRevision]);
 
   // Batch styling execution
   const handleApplyBatch = useCallback(async () => {
-    if (!font || !originalFont || targetGlyphs.length === 0 || isProcessing) return;
+    if (!font || targetGlyphs.length === 0 || isProcessing) return;
 
     setIsProcessing(true);
     const total = targetGlyphs.length;
@@ -399,10 +419,10 @@ export default function App() {
     const processNextChunk = async () => {
       const end = Math.min(index + chunkSize, total);
       for (let i = index; i < end; i++) {
-        const origG = targetGlyphs[i];
-        const g = font.glyphs.get(origG.index);
-        if (origG.path && origG.path.commands.length > 0) {
-          const transformed = transformGlyphPath(origG.path, batchConfig);
+        const targetG = targetGlyphs[i];
+        const g = font.glyphs.get(targetG.index);
+        if (g && g.path && g.path.commands.length > 0) {
+          const transformed = transformGlyphPath(g.path, batchConfig);
           g.path = transformed;
         }
       }
@@ -423,7 +443,7 @@ export default function App() {
         setTimeout(processNextChunk, 0);
       } else {
         try {
-          await injectLiveFontFace(font, 'StylizedFontLive');
+          await refreshLiveFontFace(font);
           setHasUnsavedChanges(true);
           setGlyphRevision((v) => v + 1);
           setIsProcessing(false);
@@ -445,7 +465,7 @@ export default function App() {
     };
 
     processNextChunk();
-  }, [font, originalFont, targetGlyphs, isProcessing, batchConfig, showToast]);
+  }, [font, targetGlyphs, isProcessing, batchConfig, refreshLiveFontFace, showToast]);
 
   // Batch node merging execution by distance
   const handleBatchMergeNodes = useCallback(
@@ -486,7 +506,7 @@ export default function App() {
           setTimeout(processMergeChunk, 0);
         } else {
           try {
-            await injectLiveFontFace(font, 'StylizedFontLive');
+            await refreshLiveFontFace(font);
             setHasUnsavedChanges(true);
             setGlyphRevision((v) => v + 1);
             setIsProcessing(false);
@@ -507,7 +527,7 @@ export default function App() {
 
       processMergeChunk();
     },
-    [font, targetGlyphs, isProcessing, showToast]
+    [font, targetGlyphs, isProcessing, refreshLiveFontFace, showToast]
   );
 
   // Single active glyph node merging execution (no preview, direct apply)
@@ -522,7 +542,7 @@ export default function App() {
       setHasUnsavedChanges(true);
       setFont(font);
       setGlyphRevision((v) => v + 1);
-      await injectLiveFontFace(font, 'StylizedFontLive');
+      await refreshLiveFontFace(font);
 
       const charName = currentGlyph.unicode
         ? String.fromCharCode(currentGlyph.unicode)
@@ -531,7 +551,98 @@ export default function App() {
         `Merged nodes (< ${distanceThreshold}px) on '${charName}': ${res.stats.removedPoints} vertices removed (-${res.stats.reductionPercentage}%)`
       );
     },
-    [font, currentGlyph, isProcessing, showToast]
+    [font, currentGlyph, isProcessing, refreshLiveFontFace, showToast]
+  );
+
+  // Batch path simplification using Ramer-Douglas-Peucker (RDP) algorithm across scoped glyphs
+  const handleBatchSimplifyPath = useCallback(
+    async (epsilon: number) => {
+      if (!font || targetGlyphs.length === 0 || isProcessing) return;
+
+      setIsProcessing(true);
+      const total = targetGlyphs.length;
+      let index = 0;
+      let totalRemoved = 0;
+      let totalOriginal = 0;
+      const chunkSize = 10;
+
+      const processSimplifyChunk = async () => {
+        const end = Math.min(index + chunkSize, total);
+
+        for (let i = index; i < end; i++) {
+          const glyphInfo = targetGlyphs[i];
+          const g = font.glyphs.get(glyphInfo.index);
+          if (g && g.path && g.path.commands.length > 0) {
+            const res = simplifyPathRDP(g.path, epsilon);
+            g.path = res.path;
+            totalRemoved += res.stats.removedPoints;
+            totalOriginal += res.stats.originalPoints;
+          }
+        }
+
+        const currentChar = targetGlyphs[end - 1]?.unicode
+          ? String.fromCharCode(targetGlyphs[end - 1].unicode!)
+          : targetGlyphs[end - 1]?.name || '';
+
+        setProgress({
+          current: end,
+          total,
+          char: currentChar,
+        });
+
+        index = end;
+
+        if (index < total) {
+          setTimeout(processSimplifyChunk, 0);
+        } else {
+          try {
+            await refreshLiveFontFace(font);
+            setHasUnsavedChanges(true);
+            setGlyphRevision((v) => v + 1);
+            setIsProcessing(false);
+            confetti({
+              particleCount: 40,
+              spread: 50,
+              origin: { y: 0.8 },
+            });
+            const pct = totalOriginal > 0 ? Math.round((totalRemoved / totalOriginal) * 100) : 0;
+            showToast(
+              `Path simplified (RDP ε = ${epsilon}px) across ${total} glyphs: ${totalRemoved} vertices reduced (-${pct}%)!`
+            );
+          } catch (err) {
+            console.error('Error refreshing font after RDP simplify:', err);
+            setIsProcessing(false);
+          }
+        }
+      };
+
+      processSimplifyChunk();
+    },
+    [font, targetGlyphs, isProcessing, refreshLiveFontFace, showToast]
+  );
+
+  // Single active glyph path simplification via Ramer-Douglas-Peucker (RDP) algorithm
+  const handleSimplifyCurrentGlyph = useCallback(
+    async (epsilon: number) => {
+      if (!font || !currentGlyph || isProcessing) return;
+      const g = font.glyphs.get(currentGlyph.index);
+      if (!g || !g.path || g.path.commands.length === 0) return;
+
+      const res = simplifyPathRDP(g.path, epsilon);
+      g.path = res.path;
+      setHasUnsavedChanges(true);
+      setFont(font);
+      setGlyphRevision((v) => v + 1);
+      await refreshLiveFontFace(font);
+
+      const charName = currentGlyph.unicode
+        ? String.fromCharCode(currentGlyph.unicode)
+        : currentGlyph.name || 'glyph';
+      showToast(
+        `Path simplified (RDP ε = ${epsilon}px) on '${charName}': ${res.stats.removedPoints} vertices removed (-${res.stats.reductionPercentage}%)`
+      );
+    },
+    [font, currentGlyph, isProcessing, refreshLiveFontFace, showToast]
   );
 
   // Reset to original font
@@ -540,16 +651,18 @@ export default function App() {
     try {
       setIsLoadingFont(true);
       const reParsed = opentype.parse(originalBufferRef.current.slice(0));
+      sanitizeFontLayoutTables(reParsed);
       setFont(reParsed);
-      await injectLiveFontFace(reParsed, 'StylizedFontLive');
+      await refreshLiveFontFace(reParsed);
       setHasUnsavedChanges(false);
+      setGlyphRevision((v) => v + 1);
       setIsLoadingFont(false);
       showToast('Reverted all glyph contours to original state.');
     } catch (err) {
       console.error('Reset error:', err);
       setIsLoadingFont(false);
     }
-  }, [showToast]);
+  }, [refreshLiveFontFace, showToast]);
 
   // Export Font (OTF or TTF)
   const handleExport = useCallback(
@@ -576,10 +689,10 @@ export default function App() {
         setHasUnsavedChanges(true);
         setFont(font);
         setGlyphRevision((v) => v + 1);
-        await injectLiveFontFace(font, 'StylizedFontLive');
+        await refreshLiveFontFace(font);
       }
     },
-    [font]
+    [font, refreshLiveFontFace]
   );
 
   // Update advance width on individual glyph
@@ -677,6 +790,8 @@ export default function App() {
                       onApplyBatch={handleApplyBatch}
                       onBatchMergeNodes={handleBatchMergeNodes}
                       onMergeCurrentGlyph={handleMergeCurrentGlyph}
+                      onBatchSimplifyPath={handleBatchSimplifyPath}
+                      onSimplifyCurrentGlyph={handleSimplifyCurrentGlyph}
                       currentGlyph={currentGlyph}
                       onApplyPreviewToCurrentGlyph={handleApplyPreviewToCurrentGlyph}
                       isProcessing={isProcessing}
@@ -707,6 +822,7 @@ export default function App() {
                   font={font}
                   selectedGlyphIndex={selectedGlyphIndex}
                   onSelectGlyphIndex={setSelectedGlyphIndex}
+                  glyphRevision={glyphRevision}
                 />
               </div>
             )}
@@ -716,7 +832,7 @@ export default function App() {
               <PreviewDashboard
                 font={font}
                 originalFont={originalFont}
-                liveFontFamily="StylizedFontLive"
+                liveFontFamily={liveFontFamily}
                 originalFontFamily="OriginalFontLive"
                 settings={previewSettings}
                 onChangeSettings={setPreviewSettings}

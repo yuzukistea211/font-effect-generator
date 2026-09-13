@@ -1,5 +1,5 @@
 import * as opentype from 'opentype.js';
-import type { BatchStyleConfig, PerlinConfig, PixelateConfig, CrystallineConfig, GlitchConfig, MeltConfig } from '../types';
+import type { BatchStyleConfig, PerlinConfig, PixelateConfig, CrystallineConfig, GlitchConfig, MeltConfig, CRTConfig } from '../types';
 import { PerlinNoise } from './perlin';
 
 interface Point {
@@ -57,6 +57,8 @@ export function transformGlyphPath(
       return transformGlitch(originalPath, config.glitch);
     case 'melt':
       return transformMelt(originalPath, config.melt);
+    case 'crt':
+      return transformCRT(originalPath, config.crt);
     default:
       return clonePath(originalPath);
   }
@@ -141,17 +143,22 @@ function transformPerlinJagged(path: opentype.Path, cfg: PerlinConfig): opentype
     } else if (cmd.type === 'L') {
       const target: Point = { x: cmd.x, y: cmd.y };
       const d = dist(curr, target);
-      const steps = Math.max(2, Math.ceil(d / stepSize));
       const tangent: Point = { x: target.x - curr.x, y: target.y - curr.y };
 
-      for (let i = 1; i <= steps; i++) {
-        const t = i / steps;
-        const pt: Point = {
-          x: curr.x + t * (target.x - curr.x),
-          y: curr.y + t * (target.y - curr.y),
-        };
-        const dp = displace(pt, tangent);
+      if (d < 4) {
+        const dp = displace(target, tangent);
         outPath.lineTo(dp.x, dp.y);
+      } else {
+        const steps = Math.max(1, Math.ceil(d / stepSize));
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          const pt: Point = {
+            x: curr.x + t * (target.x - curr.x),
+            y: curr.y + t * (target.y - curr.y),
+          };
+          const dp = displace(pt, tangent);
+          outPath.lineTo(dp.x, dp.y);
+        }
       }
       curr = target;
     } else if (cmd.type === 'C') {
@@ -196,16 +203,18 @@ function transformPerlinJagged(path: opentype.Path, cfg: PerlinConfig): opentype
       // Subdivide the closing segment back to contourStart so the lower stroke line is consistently styled
       const d = dist(curr, contourStart);
       if (d > 0.5) {
-        const steps = Math.max(2, Math.ceil(d / stepSize));
-        const tangent: Point = { x: contourStart.x - curr.x, y: contourStart.y - curr.y };
-        for (let i = 1; i < steps; i++) {
-          const t = i / steps;
-          const pt: Point = {
-            x: curr.x + t * (contourStart.x - curr.x),
-            y: curr.y + t * (contourStart.y - curr.y),
-          };
-          const dp = displace(pt, tangent);
-          outPath.lineTo(dp.x, dp.y);
+        if (d >= 4) {
+          const steps = Math.max(1, Math.ceil(d / stepSize));
+          const tangent: Point = { x: contourStart.x - curr.x, y: contourStart.y - curr.y };
+          for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            const pt: Point = {
+              x: curr.x + t * (contourStart.x - curr.x),
+              y: curr.y + t * (contourStart.y - curr.y),
+            };
+            const dp = displace(pt, tangent);
+            outPath.lineTo(dp.x, dp.y);
+          }
         }
         // Connect directly into the displaced start point
         outPath.lineTo(startDisplaced.x, startDisplaced.y);
@@ -550,15 +559,20 @@ function transformMelt(path: opentype.Path, cfg: MeltConfig): opentype.Path {
     } else if (cmd.type === 'L') {
       const target: Point = { x: cmd.x, y: cmd.y };
       const d = dist(curr, target);
-      const steps = Math.max(2, Math.ceil(d / stepSize));
-      for (let i = 1; i <= steps; i++) {
-        const t = i / steps;
-        const pt: Point = {
-          x: curr.x + t * (target.x - curr.x),
-          y: curr.y + t * (target.y - curr.y),
-        };
-        const dp = displace(pt);
+      if (d < 4) {
+        const dp = displace(target);
         outPath.lineTo(dp.x, dp.y);
+      } else {
+        const steps = Math.max(1, Math.ceil(d / stepSize));
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          const pt: Point = {
+            x: curr.x + t * (target.x - curr.x),
+            y: curr.y + t * (target.y - curr.y),
+          };
+          const dp = displace(pt);
+          outPath.lineTo(dp.x, dp.y);
+        }
       }
       curr = target;
     } else if (cmd.type === 'C') {
@@ -592,6 +606,143 @@ function transformMelt(path: opentype.Path, cfg: MeltConfig): opentype.Path {
         const steps = Math.max(2, Math.ceil(d / stepSize));
         for (let i = 1; i < steps; i++) {
           const t = i / steps;
+          const pt: Point = {
+            x: curr.x + t * (contourStart.x - curr.x),
+            y: curr.y + t * (contourStart.y - curr.y),
+          };
+          const dp = displace(pt);
+          outPath.lineTo(dp.x, dp.y);
+        }
+        outPath.lineTo(startDisplaced.x, startDisplaced.y);
+      }
+      outPath.close();
+      curr = contourStart;
+    }
+  }
+
+  return outPath;
+}
+
+function hash1D(x: number, seed: number): number {
+  const n = Math.sin(x * 127.1 + seed * 311.7) * 43758.5453123;
+  return n - Math.floor(n);
+}
+
+/**
+ * Procedural CRT Monitor glyph distortion:
+ * - Spherical CRT tube glass curvature (barrel distortion)
+ * - Horizontal electron beam scanline raster displacement & stepping
+ * - Odd/even interlace scanline shift
+ * - Horizontal beam sync jitter & magnetic phosphor drift
+ * - Vertical sync beam hum/roll
+ */
+function transformCRT(path: opentype.Path, cfg: CRTConfig): opentype.Path {
+  const outPath = new opentype.Path();
+  const bbox = path.getBoundingBox();
+  const minX = bbox.x1;
+  const maxX = bbox.x2;
+  const minY = bbox.y1;
+  const maxY = bbox.y2;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const halfW = Math.max(60, (maxX - minX) / 2);
+  const halfH = Math.max(60, (maxY - minY) / 2);
+
+  const scanH = Math.max(6, cfg.scanlineHeight || 28);
+  const curveAmount = (cfg.curvature || 0) / 100;
+  const jitterAmount = cfg.rasterJitter || 0;
+  const interlaceAmount = cfg.interlaceShift || 0;
+  const beamRollAmount = cfg.beamRoll || 0;
+  const seed = cfg.seed || 42;
+
+  const displace = (p: Point): Point => {
+    // 1. Barrel tube curvature (bulging outward from screen center)
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const nx = dx / halfW;
+    const ny = dy / halfH;
+    const r2 = nx * nx + ny * ny;
+
+    const barrelX = p.x + dx * curveAmount * (0.15 * ny * ny + 0.1 * r2);
+    const barrelY = p.y + dy * curveAmount * (0.15 * nx * nx + 0.1 * r2);
+
+    // 2. Scanline raster stepping
+    const lineIndex = Math.floor(barrelY / scanH);
+    const linePhase = (((barrelY % scanH) + scanH) % scanH) / scanH;
+
+    // Alternating interlace shift on odd/even scanlines
+    const interlace = (lineIndex % 2 === 0 ? 1 : -1) * interlaceAmount * Math.sin(linePhase * Math.PI);
+
+    // 3. Horizontal raster jitter / beam drift
+    const jitter = (hash1D(lineIndex, seed) - 0.5) * 2 * jitterAmount;
+
+    // 4. Vertical sync / beam roll wobble
+    const beamRoll = Math.sin(barrelY * 0.012 + seed * 0.1) * beamRollAmount;
+
+    return {
+      x: barrelX + interlace + jitter + beamRoll,
+      y: barrelY,
+    };
+  };
+
+  const stepSize = Math.max(6, Math.min(18, scanH / 2));
+  let curr: Point = { x: 0, y: 0 };
+  let contourStart: Point = { x: 0, y: 0 };
+  let startDisplaced: Point = { x: 0, y: 0 };
+
+  const commands = path.commands;
+  for (let cIdx = 0; cIdx < commands.length; cIdx++) {
+    const cmd = commands[cIdx];
+    if (cmd.type === 'M') {
+      curr = { x: cmd.x, y: cmd.y };
+      contourStart = { ...curr };
+      startDisplaced = displace(curr);
+      outPath.moveTo(startDisplaced.x, startDisplaced.y);
+    } else if (cmd.type === 'L') {
+      const target: Point = { x: cmd.x, y: cmd.y };
+      const dTotal = dist(curr, target);
+      const steps = Math.max(1, Math.ceil(dTotal / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const pt: Point = {
+          x: curr.x + (target.x - curr.x) * t,
+          y: curr.y + (target.y - curr.y) * t,
+        };
+        const dp = displace(pt);
+        outPath.lineTo(dp.x, dp.y);
+      }
+      curr = target;
+    } else if (cmd.type === 'C') {
+      const p1: Point = { x: cmd.x1, y: cmd.y1 };
+      const p2: Point = { x: cmd.x2, y: cmd.y2 };
+      const p3: Point = { x: cmd.x, y: cmd.y };
+      const chord = dist(curr, p3);
+      const steps = Math.max(3, Math.ceil(chord / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const pt = getCubicPoint(curr, p1, p2, p3, t);
+        const dp = displace(pt);
+        outPath.lineTo(dp.x, dp.y);
+      }
+      curr = p3;
+    } else if (cmd.type === 'Q') {
+      const p1: Point = { x: cmd.x1, y: cmd.y1 };
+      const p2: Point = { x: cmd.x, y: cmd.y };
+      const chord = dist(curr, p2);
+      const steps = Math.max(3, Math.ceil(chord / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const pt = getQuadPoint(curr, p1, p2, t);
+        const dp = displace(pt);
+        outPath.lineTo(dp.x, dp.y);
+      }
+      curr = p2;
+    } else if (cmd.type === 'Z') {
+      const d = dist(curr, contourStart);
+      if (d > 0.5) {
+        const steps = Math.max(1, Math.ceil(d / stepSize));
+        for (let s = 1; s < steps; s++) {
+          const t = s / steps;
           const pt: Point = {
             x: curr.x + t * (contourStart.x - curr.x),
             y: curr.y + t * (contourStart.y - curr.y),
@@ -804,7 +955,65 @@ export const STYLE_PRESETS: PresetItem[] = [
       },
     },
   },
+  {
+    id: 'crt-retro-terminal',
+    name: 'CRT Phosphor Terminal',
+    category: 'artistic',
+    description: '1980s green-screen phosphor monitor with scanlines and barrel tube curvature',
+    config: {
+      mode: 'crt',
+      crt: {
+        scanlineHeight: 28,
+        curvature: 22,
+        rasterJitter: 10,
+        interlaceShift: 12,
+        beamRoll: 8,
+        seed: 42,
+      },
+    },
+  },
+  {
+    id: 'crt-arcade-raster',
+    name: 'CRT Arcade Raster Beam',
+    category: 'artistic',
+    description: 'High-contrast arcade CRT monitor with heavy alternating interlace beam steps',
+    config: {
+      mode: 'crt',
+      crt: {
+        scanlineHeight: 38,
+        curvature: 28,
+        rasterJitter: 18,
+        interlaceShift: 20,
+        beamRoll: 16,
+        seed: 88,
+      },
+    },
+  },
+  {
+    id: 'crt-cyber-sync',
+    name: 'CRT Cyber Magnetic Roll',
+    category: 'artistic',
+    description: 'Electromagnetic sync roll and raster jitter across curved cathode tube',
+    config: {
+      mode: 'crt',
+      crt: {
+        scanlineHeight: 22,
+        curvature: 35,
+        rasterJitter: 22,
+        interlaceShift: 8,
+        beamRoll: 28,
+        seed: 314,
+      },
+    },
+  },
 ];
 
-export { mergePathPointsByDistance } from './pointMerger';
+export {
+  mergePathPointsByDistance,
+  simplifyPathRDP,
+  simplifySvgPathRDP,
+  simplifyClosedPolygonRDP,
+  rdp,
+} from './pointMerger';
+
 
