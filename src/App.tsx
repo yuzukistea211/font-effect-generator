@@ -831,7 +831,6 @@ export default function App() {
             {activeView === 'preview' && (
               <PreviewDashboard
                 font={font}
-                originalFont={originalFont}
                 liveFontFamily={liveFontFamily}
                 originalFontFamily="OriginalFontLive"
                 settings={previewSettings}

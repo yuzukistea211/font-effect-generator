@@ -1,4 +1,4 @@
-import type { Font, Glyph } from 'opentype.js';
+import type { Glyph } from 'opentype.js';
 
 export type FontFormat = 'otf' | 'ttf' | 'woff';
 

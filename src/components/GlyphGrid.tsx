@@ -6,7 +6,6 @@ interface GlyphGridProps {
   font: opentype.Font | null;
   selectedGlyphIndex: number | null;
   onSelectGlyphIndex: (index: number) => void;
-  targetScopeCharFilter?: (glyph: opentype.Glyph) => boolean;
   glyphRevision?: number;
 }
 

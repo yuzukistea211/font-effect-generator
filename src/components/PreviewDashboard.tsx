@@ -16,7 +16,6 @@ import type { SpecimenMode, PreviewSettings } from '../types';
 
 interface PreviewDashboardProps {
   font: opentype.Font | null;
-  originalFont: opentype.Font | null;
   liveFontFamily: string;
   originalFontFamily: string;
   settings: PreviewSettings;
@@ -46,7 +45,6 @@ const COLOR_PRESETS = [
 
 export const PreviewDashboard: React.FC<PreviewDashboardProps> = ({
   font,
-  originalFont,
   liveFontFamily,
   originalFontFamily,
   settings,
