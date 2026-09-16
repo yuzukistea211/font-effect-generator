@@ -9,8 +9,11 @@ import {
   Info,
   Check,
   FileCode,
+  HardDrive,
 } from 'lucide-react';
 import type { FontMetadata } from '../types';
+import type { FontSizeDetails } from '../utils/fontSizeEstimator';
+import { formatBytes } from '../utils/fontSizeEstimator';
 
 interface NavbarProps {
   metadata: FontMetadata;
@@ -25,6 +28,8 @@ interface NavbarProps {
   setActiveView: (view: 'editor' | 'preview') => void;
   hasUnsavedChanges: boolean;
   onOpenCssSnippet: () => void;
+  sizeDetails?: FontSizeDetails;
+  onOpenFontSizeModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -40,6 +45,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveView,
   hasUnsavedChanges,
   onOpenCssSnippet,
+  sizeDetails,
+  onOpenFontSizeModal,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -174,6 +181,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             <FileCode className="w-3.5 h-3.5" />
           </button>
 
+          {/* Font File Size Approximation Badge */}
+          {sizeDetails && (
+            <button
+              onClick={onOpenFontSizeModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 border border-zinc-300 bg-white hover:bg-zinc-100 text-xs font-mono transition-colors text-zinc-800"
+              title="Approximate font file size & memory breakdown (click to view)"
+            >
+              <HardDrive className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+              <span className="font-bold">{formatBytes(sizeDetails.currentSizeBytes)}</span>
+              {sizeDetails.deltaBytes !== 0 && (
+                <span
+                  className={`text-[10px] hidden md:inline font-bold ${
+                    sizeDetails.deltaBytes > 0 ? 'text-amber-700' : 'text-emerald-700'
+                  }`}
+                >
+                  {sizeDetails.deltaBytes > 0 ? '+' : ''}
+                  {formatBytes(sizeDetails.deltaBytes)}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Revert */}
           {hasUnsavedChanges && (
             <button
@@ -201,7 +230,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             {exportMenuOpen && (
-              <div className="absolute right-0 mt-1 w-44 bg-white border border-zinc-300 z-50 text-xs font-mono shadow-lg">
+              <div className="absolute right-0 mt-1 w-52 bg-white border border-zinc-300 z-50 text-xs font-mono shadow-lg">
                 <button
                   onClick={() => {
                     onExport('otf');
@@ -209,8 +238,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className="w-full text-left px-3 py-2.5 border-b border-zinc-100 hover:bg-zinc-100 flex items-center justify-between text-zinc-900 transition-colors"
                 >
-                  <span className="font-semibold">EXPORT .OTF</span>
-                  <span className="text-[10px] text-zinc-400">OpenType</span>
+                  <div>
+                    <div className="font-semibold">EXPORT .OTF</div>
+                    <div className="text-[10px] text-zinc-400">OpenType</div>
+                  </div>
+                  {sizeDetails && (
+                    <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-1.5 py-0.5">
+                      ~{formatBytes(sizeDetails.currentSizeBytes)}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={() => {
@@ -219,8 +255,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className="w-full text-left px-3 py-2.5 hover:bg-zinc-100 flex items-center justify-between text-zinc-900 transition-colors"
                 >
-                  <span className="font-semibold">EXPORT .TTF</span>
-                  <span className="text-[10px] text-zinc-400">TrueType</span>
+                  <div>
+                    <div className="font-semibold">EXPORT .TTF</div>
+                    <div className="text-[10px] text-zinc-400">TrueType</div>
+                  </div>
+                  {sizeDetails && (
+                    <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-1.5 py-0.5">
+                      ~{formatBytes(sizeDetails.currentSizeBytes)}
+                    </span>
+                  )}
                 </button>
               </div>
             )}

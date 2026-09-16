@@ -5,10 +5,12 @@ import {
   Scissors,
   Layers,
   Minimize2,
-  Tv,
+  HardDrive,
 } from 'lucide-react';
-import type { BatchStyleConfig, BatchScope, GlyphData, StylingMode } from '../types';
+import type { BatchStyleConfig, BatchScope, GlyphData } from '../types';
 import { STYLE_PRESETS } from '../utils/fontStyling';
+import type { FontSizeDetails } from '../utils/fontSizeEstimator';
+import { formatBytes } from '../utils/fontSizeEstimator';
 
 interface BatchProcessingPanelProps {
   config: BatchStyleConfig;
@@ -25,6 +27,8 @@ interface BatchProcessingPanelProps {
   targetGlyphCount: number;
   livePreviewEnabled: boolean;
   onToggleLivePreview: (enabled: boolean) => void;
+  sizeDetails?: FontSizeDetails;
+  onOpenFontSizeModal?: () => void;
 }
 
 export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
@@ -42,21 +46,23 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
   targetGlyphCount,
   livePreviewEnabled,
   onToggleLivePreview,
+  sizeDetails,
+  onOpenFontSizeModal,
 }) => {
   const [mergeDistance, setMergeDistance] = useState<number>(15);
   const [rdpEpsilon, setRdpEpsilon] = useState<number>(3.0);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(
+    STYLE_PRESETS[0]?.id || 'perlin-sawtooth'
+  );
 
   const handleScopeChange = (scope: BatchScope) => {
     onChangeConfig({ ...config, scope });
   };
 
-  const handleModeChange = (mode: StylingMode) => {
-    onChangeConfig({ ...config, mode });
-  };
-
   const applyPreset = (presetId: string) => {
     const preset = STYLE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
+    setSelectedPresetId(presetId);
     onChangeConfig({
       ...config,
       ...preset.config,
@@ -67,6 +73,9 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
       glitch: preset.config.glitch ? { ...config.glitch, ...preset.config.glitch } : config.glitch,
       melt: preset.config.melt ? { ...config.melt, ...preset.config.melt } : config.melt,
       crt: preset.config.crt ? { ...config.crt, ...preset.config.crt } : config.crt,
+      heatHaze: preset.config.heatHaze ? { ...config.heatHaze, ...preset.config.heatHaze } : config.heatHaze,
+      ascii: preset.config.ascii ? { ...config.ascii, ...preset.config.ascii } : config.ascii,
+      pseudo3D: preset.config.pseudo3D ? { ...config.pseudo3D, ...preset.config.pseudo3D } : config.pseudo3D,
     });
   };
 
@@ -84,6 +93,15 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
           rasterJitter: 10,
           interlaceShift: 12,
           beamRoll: 8,
+        }),
+        seed: newSeed,
+      },
+      heatHaze: {
+        ...(config.heatHaze || {
+          wobble: 32,
+          verticalStretch: 28,
+          frequency: 0.016,
+          groundTurbulence: 1.6,
         }),
         seed: newSeed,
       },
@@ -116,12 +134,13 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
 
       {/* Presets Bar */}
       <div className="flex flex-col gap-1.5">
-        <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
-          Typographic Presets
+        <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 flex items-center justify-between">
+          <span>Typographic Presets</span>
+          <span className="text-zinc-700 font-bold uppercase">{config.mode}</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {STYLE_PRESETS.map((preset) => {
-            const isMatch = preset.config.mode === config.mode;
+            const isMatch = selectedPresetId === preset.id;
             return (
               <button
                 key={preset.id}
@@ -134,43 +153,6 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
                 title={preset.description}
               >
                 {preset.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Engine Algorithm Mode Selector */}
-      <div className="flex flex-col gap-1.5">
-        <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 flex items-center justify-between">
-          <span>Styling Algorithm</span>
-          <span className="text-zinc-700 font-bold uppercase">{config.mode}</span>
-        </div>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-          {(
-            [
-              { id: 'perlin' as const, label: 'PERLIN' },
-              { id: 'pixelate' as const, label: 'PIXEL' },
-              { id: 'crystalline' as const, label: 'POLY' },
-              { id: 'glitch' as const, label: 'GLITCH' },
-              { id: 'melt' as const, label: 'MELT' },
-              { id: 'crt' as const, label: 'CRT', icon: Tv },
-            ] as Array<{ id: StylingMode; label: string; icon?: React.ComponentType<{ className?: string }> }>
-          ).map((m) => {
-            const isMatch = config.mode === m.id;
-            const IconComp = m.icon;
-            return (
-              <button
-                key={m.id}
-                onClick={() => handleModeChange(m.id)}
-                className={`flex items-center justify-center gap-1 py-1.5 px-2 text-[11px] font-mono border transition-all ${
-                  isMatch
-                    ? 'border-zinc-900 bg-zinc-900 text-white font-bold shadow-xs'
-                    : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100'
-                }`}
-              >
-                {IconComp && <IconComp className="w-3 h-3" />}
-                <span>{m.label}</span>
               </button>
             );
           })}
@@ -828,6 +810,433 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
             </div>
           </div>
         )}
+
+        {/* Heat Haze Mirage Controls */}
+        {config.mode === 'heat-haze' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Horizontal Mirage Wobble</span>
+                <span className="text-zinc-900 font-bold">{config.heatHaze?.wobble ?? 32}px</span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max="65"
+                step="1"
+                value={config.heatHaze?.wobble ?? 32}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    heatHaze: {
+                      ...(config.heatHaze || {
+                        wobble: 32,
+                        verticalStretch: 28,
+                        frequency: 0.016,
+                        groundTurbulence: 1.6,
+                        seed: 42,
+                      }),
+                      wobble: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Vertical Thermal Stretch</span>
+                <span className="text-zinc-900 font-bold">{config.heatHaze?.verticalStretch ?? 28}px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="60"
+                step="1"
+                value={config.heatHaze?.verticalStretch ?? 28}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    heatHaze: {
+                      ...(config.heatHaze || {
+                        wobble: 32,
+                        verticalStretch: 28,
+                        frequency: 0.016,
+                        groundTurbulence: 1.6,
+                        seed: 42,
+                      }),
+                      verticalStretch: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Wave Ripple Frequency</span>
+                <span className="text-zinc-900 font-bold">{(config.heatHaze?.frequency ?? 0.016).toFixed(3)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.005"
+                max="0.045"
+                step="0.001"
+                value={config.heatHaze?.frequency ?? 0.016}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    heatHaze: {
+                      ...(config.heatHaze || {
+                        wobble: 32,
+                        verticalStretch: 28,
+                        frequency: 0.016,
+                        groundTurbulence: 1.6,
+                        seed: 42,
+                      }),
+                      frequency: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Ground Heat Gradient</span>
+                <span className="text-zinc-900 font-bold">{(config.heatHaze?.groundTurbulence ?? 1.6).toFixed(1)}x</span>
+              </div>
+              <input
+                type="range"
+                min="0.3"
+                max="3.0"
+                step="0.1"
+                value={config.heatHaze?.groundTurbulence ?? 1.6}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    heatHaze: {
+                      ...(config.heatHaze || {
+                        wobble: 32,
+                        verticalStretch: 28,
+                        frequency: 0.016,
+                        groundTurbulence: 1.6,
+                        seed: 42,
+                      }),
+                      groundTurbulence: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Random Seed</span>
+                <span className="text-zinc-900 font-bold">{config.heatHaze?.seed ?? 42}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={config.heatHaze?.seed ?? 42}
+                  onChange={(e) =>
+                    onChangeConfig({
+                      ...config,
+                      heatHaze: {
+                        ...(config.heatHaze || {
+                          wobble: 32,
+                          verticalStretch: 28,
+                          frequency: 0.016,
+                          groundTurbulence: 1.6,
+                          seed: 42,
+                        }),
+                        seed: parseInt(e.target.value, 10) || 0,
+                      },
+                    })
+                  }
+                  className="w-full px-2 py-1 border border-zinc-300 bg-zinc-50 font-mono text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                />
+                <button
+                  onClick={randomizeSeed}
+                  className="px-3 py-1 flex items-center justify-center gap-1.5 border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-900 font-mono text-xs transition-colors shrink-0"
+                  title="Roll random seed"
+                >
+                  <Dices className="w-3.5 h-3.5" />
+                  <span>Roll</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ASCII Conversion Controls */}
+        {config.mode === 'ascii' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Character Cell Size</span>
+                <span className="text-zinc-900 font-bold">{config.ascii?.charSize ?? 34}px</span>
+              </div>
+              <input
+                type="range"
+                min="20"
+                max="75"
+                step="2"
+                value={config.ascii?.charSize ?? 34}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    ascii: {
+                      ...(config.ascii || {
+                        charSize: 34,
+                        charset: 'density',
+                        fillThreshold: 0.22,
+                        scale: 0.85,
+                      }),
+                      charSize: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Coverage Threshold</span>
+                <span className="text-zinc-900 font-bold">{Math.round((config.ascii?.fillThreshold ?? 0.22) * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="0.65"
+                step="0.02"
+                value={config.ascii?.fillThreshold ?? 0.22}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    ascii: {
+                      ...(config.ascii || {
+                        charSize: 34,
+                        charset: 'density',
+                        fillThreshold: 0.22,
+                        scale: 0.85,
+                      }),
+                      fillThreshold: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Micro-Char Scale</span>
+                <span className="text-zinc-900 font-bold">{Math.round((config.ascii?.scale ?? 0.85) * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="1.0"
+                step="0.05"
+                value={config.ascii?.scale ?? 0.85}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    ascii: {
+                      ...(config.ascii || {
+                        charSize: 34,
+                        charset: 'density',
+                        fillThreshold: 0.22,
+                        scale: 0.85,
+                      }),
+                      scale: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">ASCII Character Set</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {(
+                  [
+                    { id: 'density', label: 'Density (. : + * #)' },
+                    { id: 'binary', label: 'Binary (0 1)' },
+                    { id: 'matrix', label: 'Matrix (0 1 X #)' },
+                    { id: 'alphanumeric', label: 'ASCII Set' },
+                  ] as const
+                ).map((set) => (
+                  <button
+                    key={set.id}
+                    onClick={() =>
+                      onChangeConfig({
+                        ...config,
+                        ascii: {
+                          ...(config.ascii || {
+                            charSize: 34,
+                            charset: 'density',
+                            fillThreshold: 0.22,
+                            scale: 0.85,
+                          }),
+                          charset: set.id,
+                        },
+                      })
+                    }
+                    className={`py-1 px-1.5 text-[10px] font-mono border transition-all text-center ${
+                      (config.ascii?.charset ?? 'density') === set.id
+                        ? 'border-zinc-900 bg-zinc-900 text-white font-bold'
+                        : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100'
+                    }`}
+                  >
+                    {set.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pseudo-3D Controls */}
+        {config.mode === 'pseudo-3d' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Extrusion Depth</span>
+                <span className="text-zinc-900 font-bold">{config.pseudo3D?.depth ?? 55}px</span>
+              </div>
+              <input
+                type="range"
+                min="10"
+                max="130"
+                step="5"
+                value={config.pseudo3D?.depth ?? 55}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    pseudo3D: {
+                      ...(config.pseudo3D || {
+                        depth: 55,
+                        angle: 45,
+                        layers: 6,
+                        style: 'isometric',
+                      }),
+                      depth: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Projection Angle</span>
+                <span className="text-zinc-900 font-bold">{config.pseudo3D?.angle ?? 45}°</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="360"
+                step="5"
+                value={config.pseudo3D?.angle ?? 45}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    pseudo3D: {
+                      ...(config.pseudo3D || {
+                        depth: 55,
+                        angle: 45,
+                        layers: 6,
+                        style: 'isometric',
+                      }),
+                      angle: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Stepped Layers</span>
+                <span className="text-zinc-900 font-bold">{config.pseudo3D?.layers ?? 6}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                value={config.pseudo3D?.layers ?? 6}
+                onChange={(e) =>
+                  onChangeConfig({
+                    ...config,
+                    pseudo3D: {
+                      ...(config.pseudo3D || {
+                        depth: 55,
+                        angle: 45,
+                        layers: 6,
+                        style: 'isometric',
+                      }),
+                      layers: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full accent-zinc-900 h-1 bg-zinc-200 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-zinc-600 uppercase">Extrusion Style</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {(
+                  [
+                    { id: 'isometric', label: 'Isometric' },
+                    { id: 'stacked', label: 'Stacked' },
+                    { id: 'wire-offset', label: 'Offset' },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() =>
+                      onChangeConfig({
+                        ...config,
+                        pseudo3D: {
+                          ...(config.pseudo3D || {
+                            depth: 55,
+                            angle: 45,
+                            layers: 6,
+                            style: 'isometric',
+                          }),
+                          style: st.id,
+                        },
+                      })
+                    }
+                    className={`py-1.5 px-1 text-[10px] font-mono border transition-all text-center ${
+                      (config.pseudo3D?.style ?? 'isometric') === st.id
+                        ? 'border-zinc-900 bg-zinc-900 text-white font-bold'
+                        : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Target Scope Section */}
@@ -1043,6 +1452,71 @@ export const BatchProcessingPanel: React.FC<BatchProcessingPanelProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Approximate Font File Size & Projected Impact */}
+      {sizeDetails && (
+        <div className="border border-zinc-300 bg-white p-3.5 flex flex-col gap-2 font-mono text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <HardDrive className="w-3.5 h-3.5 text-zinc-900" />
+              <span className="font-bold uppercase tracking-wider text-zinc-900 text-xs">
+                Approximate Font Size
+              </span>
+            </div>
+            {onOpenFontSizeModal && (
+              <button
+                type="button"
+                onClick={onOpenFontSizeModal}
+                className="text-[10px] text-zinc-500 hover:text-zinc-900 underline uppercase transition-colors"
+              >
+                Breakdown
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-1 border-t border-zinc-100">
+            <div>
+              <span className="text-[10px] text-zinc-500 block uppercase">Current Size</span>
+              <span className="font-bold text-zinc-900 text-sm">
+                {formatBytes(sizeDetails.currentSizeBytes)}
+              </span>
+              {sizeDetails.deltaBytes !== 0 ? (
+                <span
+                  className={`text-[10px] block font-bold mt-0.5 ${
+                    sizeDetails.deltaBytes > 0 ? 'text-amber-700' : 'text-emerald-700'
+                  }`}
+                >
+                  {sizeDetails.deltaBytes > 0 ? '+' : ''}
+                  {formatBytes(sizeDetails.deltaBytes)} vs orig
+                </span>
+              ) : (
+                <span className="text-[10px] text-zinc-400 block mt-0.5">Original size</span>
+              )}
+            </div>
+
+            <div>
+              <span className="text-[10px] text-zinc-500 block uppercase">Projected After Batch</span>
+              <span className="font-bold text-zinc-900 text-sm">
+                ~{formatBytes(sizeDetails.projectedSizeBytes)}
+              </span>
+              {sizeDetails.projectedDeltaBytes !== 0 ? (
+                <span
+                  className={`text-[10px] block font-bold mt-0.5 ${
+                    sizeDetails.projectedDeltaBytes > 0 ? 'text-amber-700' : 'text-emerald-700'
+                  }`}
+                >
+                  {sizeDetails.projectedDeltaBytes > 0 ? '+' : ''}
+                  {formatBytes(sizeDetails.projectedDeltaBytes)} (
+                  {sizeDetails.projectedDeltaPercentage > 0 ? '+' : ''}
+                  {sizeDetails.projectedDeltaPercentage.toFixed(1)}%)
+                </span>
+              ) : (
+                <span className="text-[10px] text-zinc-400 block mt-0.5">No change</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Execution Footer (Actions) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-zinc-300">

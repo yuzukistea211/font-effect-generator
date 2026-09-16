@@ -4,7 +4,16 @@ export type FontFormat = 'otf' | 'ttf' | 'woff';
 
 export type GlyphData = Glyph;
 
-export type StylingMode = 'perlin' | 'pixelate' | 'crystalline' | 'glitch' | 'melt' | 'crt';
+export type StylingMode =
+  | 'perlin'
+  | 'pixelate'
+  | 'crystalline'
+  | 'glitch'
+  | 'melt'
+  | 'crt'
+  | 'heat-haze'
+  | 'ascii'
+  | 'pseudo-3d';
 
 export type BatchScope = 'all' | 'latin' | 'uppercase' | 'lowercase' | 'numbers' | 'custom' | 'current';
 
@@ -52,6 +61,28 @@ export interface CRTConfig {
   seed: number;
 }
 
+export interface HeatHazeConfig {
+  wobble: number; // horizontal shimmer amplitude, 5 to 60
+  verticalStretch: number; // thermal buoyant elongation, 0 to 50
+  frequency: number; // wave ripple frequency, 0.005 to 0.05
+  groundTurbulence: number; // bottom-heavy heat mirage factor, 0.2 to 2.5
+  seed: number;
+}
+
+export interface ASCIIConfig {
+  charSize: number; // cell grid pitch in font units, 24 to 80
+  charset: 'density' | 'binary' | 'matrix' | 'alphanumeric';
+  fillThreshold: number; // minimum coverage threshold to draw cell, 0.1 to 0.7
+  scale: number; // scale of micro-character inside cell, 0.5 to 1.0
+}
+
+export interface Pseudo3DConfig {
+  depth: number; // extrusion offset distance in font units, 15 to 120
+  angle: number; // projection angle in degrees (e.g. 45 for top-right, 135, etc.)
+  layers: number; // number of extruded stepping shadow/depth layers, 1 to 8
+  style: 'isometric' | 'stacked' | 'wire-offset';
+}
+
 export interface BatchStyleConfig {
   mode: StylingMode;
   scope: BatchScope;
@@ -62,6 +93,9 @@ export interface BatchStyleConfig {
   glitch: GlitchConfig;
   melt: MeltConfig;
   crt: CRTConfig;
+  heatHaze: HeatHazeConfig;
+  ascii: ASCIIConfig;
+  pseudo3D: Pseudo3DConfig;
 }
 
 export interface FontMetadata {

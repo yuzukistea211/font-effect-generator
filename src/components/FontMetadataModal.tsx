@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { X, Check } from 'lucide-react';
+import { X, Check, HardDrive } from 'lucide-react';
 import type { FontMetadata } from '../types';
+import type { FontSizeDetails } from '../utils/fontSizeEstimator';
+import { formatBytes } from '../utils/fontSizeEstimator';
 
 interface FontMetadataModalProps {
   isOpen: boolean;
   onClose: () => void;
   metadata: FontMetadata;
   onSave: (updated: FontMetadata) => void;
+  sizeDetails?: FontSizeDetails;
 }
 
 export const FontMetadataModal: React.FC<FontMetadataModalProps> = ({
@@ -14,6 +17,7 @@ export const FontMetadataModal: React.FC<FontMetadataModalProps> = ({
   onClose,
   metadata,
   onSave,
+  sizeDetails,
 }) => {
   const [form, setForm] = useState<FontMetadata>(metadata);
 
@@ -100,6 +104,30 @@ export const FontMetadataModal: React.FC<FontMetadataModalProps> = ({
               />
             </div>
           </div>
+
+          {/* Font File Size Statistics */}
+          {sizeDetails && (
+            <div className="bg-white border border-zinc-300 p-3 flex flex-col gap-2">
+              <div className="flex items-center gap-1.5 text-zinc-800 font-bold uppercase text-[10px]">
+                <HardDrive className="w-3.5 h-3.5 text-zinc-600" />
+                <span>Binary File Size & Compression</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div>
+                  <span className="text-zinc-500 block text-[9px] uppercase">Current Binary</span>
+                  <span className="font-bold text-zinc-900">{formatBytes(sizeDetails.currentSizeBytes)}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-500 block text-[9px] uppercase">Original Base</span>
+                  <span className="font-bold text-zinc-700">{formatBytes(sizeDetails.originalSizeBytes)}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-500 block text-[9px] uppercase">Est. WOFF2</span>
+                  <span className="font-bold text-emerald-700">{formatBytes(sizeDetails.estimatedWoff2Bytes)}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="pt-2 flex justify-end gap-2 border-t border-zinc-300">
             <button

@@ -1,5 +1,16 @@
 import * as opentype from 'opentype.js';
-import type { BatchStyleConfig, PerlinConfig, PixelateConfig, CrystallineConfig, GlitchConfig, MeltConfig, CRTConfig } from '../types';
+import type {
+  BatchStyleConfig,
+  PerlinConfig,
+  PixelateConfig,
+  CrystallineConfig,
+  GlitchConfig,
+  MeltConfig,
+  CRTConfig,
+  HeatHazeConfig,
+  ASCIIConfig,
+  Pseudo3DConfig,
+} from '../types';
 import { PerlinNoise } from './perlin';
 
 interface Point {
@@ -59,6 +70,12 @@ export function transformGlyphPath(
       return transformMelt(originalPath, config.melt);
     case 'crt':
       return transformCRT(originalPath, config.crt);
+    case 'heat-haze':
+      return transformHeatHaze(originalPath, config.heatHaze);
+    case 'ascii':
+      return transformASCII(originalPath, config.ascii);
+    case 'pseudo-3d':
+      return transformPseudo3D(originalPath, config.pseudo3D);
     default:
       return clonePath(originalPath);
   }
@@ -761,6 +778,440 @@ function transformCRT(path: opentype.Path, cfg: CRTConfig): opentype.Path {
 }
 
 /**
+ * Procedural Heat Haze: Thermal refraction mirage where text wobbles laterally
+ * and stretches upward with buoyant atmospheric currents above hot pavement.
+ */
+export function transformHeatHaze(path: opentype.Path, config: HeatHazeConfig): opentype.Path {
+  const outPath = new opentype.Path();
+  const bbox = path.getBoundingBox();
+  const minX = bbox.x1;
+  const maxX = bbox.x2;
+  const minY = bbox.y1;
+  const maxY = bbox.y2;
+  const glyphHeight = Math.max(1, maxY - minY);
+  const seed = config.seed || 42;
+  const wobbleAmp = config.wobble;
+  const vertStretch = config.verticalStretch;
+  const freq = config.frequency;
+  const turbulenceExp = config.groundTurbulence;
+
+  const displace = (p: Point): Point => {
+    // Height from ground pavement: 0 at bottom (minY), 1 at top (maxY)
+    const relH = Math.max(0, Math.min(1, (p.y - minY) / glyphHeight));
+    // Heat intensity: ground pavement radiates the highest convective turbulence
+    const heatFactor = Math.pow(Math.max(0.12, 1 - relH * 0.72), turbulenceExp);
+
+    // Primary & secondary horizontal shimmer mirage wave
+    const wave1 = Math.sin(p.y * freq + seed * 0.7);
+    const wave2 = Math.cos(p.y * freq * 2.2 + p.x * freq * 0.4 + seed * 1.4);
+    const dx = (wave1 * 0.72 + wave2 * 0.28) * wobbleAmp * heatFactor;
+
+    // Upward thermal buoyant convection stretch
+    const buoyantWave = Math.sin(p.x * freq * 0.8 + p.y * freq * 0.5 + seed * 0.9);
+    const dy = (1 - relH * 0.45) * vertStretch * 0.65 + buoyantWave * vertStretch * 0.35 * heatFactor;
+
+    return {
+      x: p.x + dx,
+      y: p.y + dy,
+    };
+  };
+
+  const stepSize = Math.max(8, Math.min(16, 1 / (freq * 3.5)));
+  let curr: Point = { x: 0, y: 0 };
+  let contourStart: Point = { x: 0, y: 0 };
+  let startDisplaced: Point = { x: 0, y: 0 };
+
+  for (const cmd of path.commands) {
+    if (cmd.type === 'M') {
+      curr = { x: cmd.x, y: cmd.y };
+      contourStart = { ...curr };
+      startDisplaced = displace(curr);
+      outPath.moveTo(startDisplaced.x, startDisplaced.y);
+    } else if (cmd.type === 'L') {
+      const target: Point = { x: cmd.x, y: cmd.y };
+      const dTotal = dist(curr, target);
+      const steps = Math.max(1, Math.ceil(dTotal / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const pt: Point = {
+          x: curr.x + (target.x - curr.x) * t,
+          y: curr.y + (target.y - curr.y) * t,
+        };
+        const dp = displace(pt);
+        outPath.lineTo(dp.x, dp.y);
+      }
+      curr = target;
+    } else if (cmd.type === 'C') {
+      const p1: Point = { x: cmd.x1, y: cmd.y1 };
+      const p2: Point = { x: cmd.x2, y: cmd.y2 };
+      const p3: Point = { x: cmd.x, y: cmd.y };
+      const chord = dist(curr, p3);
+      const steps = Math.max(3, Math.ceil(chord / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const pt = getCubicPoint(curr, p1, p2, p3, t);
+        const dp = displace(pt);
+        outPath.lineTo(dp.x, dp.y);
+      }
+      curr = p3;
+    } else if (cmd.type === 'Q') {
+      const p1: Point = { x: cmd.x1, y: cmd.y1 };
+      const p2: Point = { x: cmd.x, y: cmd.y };
+      const chord = dist(curr, p2);
+      const steps = Math.max(3, Math.ceil(chord / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const pt = getQuadPoint(curr, p1, p2, t);
+        const dp = displace(pt);
+        outPath.lineTo(dp.x, dp.y);
+      }
+      curr = p2;
+    } else if (cmd.type === 'Z') {
+      const d = dist(curr, contourStart);
+      if (d > 0.5) {
+        const steps = Math.max(1, Math.ceil(d / stepSize));
+        for (let s = 1; s < steps; s++) {
+          const t = s / steps;
+          const pt: Point = {
+            x: curr.x + t * (contourStart.x - curr.x),
+            y: curr.y + t * (contourStart.y - curr.y),
+          };
+          const dp = displace(pt);
+          outPath.lineTo(dp.x, dp.y);
+        }
+        outPath.lineTo(startDisplaced.x, startDisplaced.y);
+      }
+      outPath.close();
+      curr = contourStart;
+    }
+  }
+
+  return outPath;
+}
+
+/**
+ * Helper to flatten opentype.Path into discrete polygon contours for point-in-polygon queries
+ */
+function flattenPathToContours(path: opentype.Path, stepSize = 14): Point[][] {
+  const contours: Point[][] = [];
+  let currentContour: Point[] = [];
+  let curr: Point = { x: 0, y: 0 };
+
+  for (const cmd of path.commands) {
+    if (cmd.type === 'M') {
+      if (currentContour.length > 2) {
+        contours.push(currentContour);
+      }
+      curr = { x: cmd.x, y: cmd.y };
+      currentContour = [{ ...curr }];
+    } else if (cmd.type === 'L') {
+      const target: Point = { x: cmd.x, y: cmd.y };
+      const d = dist(curr, target);
+      const steps = Math.max(1, Math.ceil(d / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        currentContour.push({
+          x: curr.x + (target.x - curr.x) * t,
+          y: curr.y + (target.y - curr.y) * t,
+        });
+      }
+      curr = target;
+    } else if (cmd.type === 'C') {
+      const p1 = { x: cmd.x1, y: cmd.y1 };
+      const p2 = { x: cmd.x2, y: cmd.y2 };
+      const p3 = { x: cmd.x, y: cmd.y };
+      const chord = dist(curr, p3);
+      const steps = Math.max(2, Math.ceil(chord / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        currentContour.push(getCubicPoint(curr, p1, p2, p3, s / steps));
+      }
+      curr = p3;
+    } else if (cmd.type === 'Q') {
+      const p1 = { x: cmd.x1, y: cmd.y1 };
+      const p2 = { x: cmd.x, y: cmd.y };
+      const chord = dist(curr, p2);
+      const steps = Math.max(2, Math.ceil(chord / stepSize));
+      for (let s = 1; s <= steps; s++) {
+        currentContour.push(getQuadPoint(curr, p1, p2, s / steps));
+      }
+      curr = p2;
+    } else if (cmd.type === 'Z') {
+      if (currentContour.length > 2) {
+        contours.push(currentContour);
+      }
+      currentContour = [];
+    }
+  }
+  if (currentContour.length > 2) {
+    contours.push(currentContour);
+  }
+  return contours;
+}
+
+/**
+ * Even-odd ray casting test to check if a point lies inside glyph contours
+ */
+function isPointInGlyphContours(pt: Point, contours: Point[][]): boolean {
+  let inside = false;
+  for (const poly of contours) {
+    const n = poly.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = poly[i].x;
+      const yi = poly[i].y;
+      const xj = poly[j].x;
+      const yj = poly[j].y;
+      const intersect = yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
+      if (intersect) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Generates closed vector contour primitives for micro ASCII characters
+ */
+function appendMicroAscii(
+  outPath: opentype.Path,
+  char: string,
+  cx: number,
+  cy: number,
+  size: number
+) {
+  const r = size * 0.44;
+  const w = r * 0.8;
+  const h = r * 0.9;
+  const t = Math.max(1.8, r * 0.24);
+
+  const addRect = (x1: number, y1: number, x2: number, y2: number) => {
+    outPath.moveTo(x1, y1);
+    outPath.lineTo(x2, y1);
+    outPath.lineTo(x2, y2);
+    outPath.lineTo(x1, y2);
+    outPath.close();
+  };
+
+  switch (char) {
+    case '.':
+      addRect(cx - t * 0.8, cy - h * 0.65, cx + t * 0.8, cy - h * 0.65 + t * 1.6);
+      break;
+    case ':':
+      addRect(cx - t * 0.8, cy + h * 0.3, cx + t * 0.8, cy + h * 0.3 + t * 1.6);
+      addRect(cx - t * 0.8, cy - h * 0.6, cx + t * 0.8, cy - h * 0.6 + t * 1.6);
+      break;
+    case '-':
+      addRect(cx - w, cy - t * 0.5, cx + w, cy + t * 0.5);
+      break;
+    case '=':
+      addRect(cx - w, cy + h * 0.25 - t * 0.5, cx + w, cy + h * 0.25 + t * 0.5);
+      addRect(cx - w, cy - h * 0.25 - t * 0.5, cx + w, cy - h * 0.25 + t * 0.5);
+      break;
+    case '+':
+      addRect(cx - w, cy - t * 0.5, cx + w, cy + t * 0.5);
+      addRect(cx - t * 0.5, cy - h, cx + t * 0.5, cy + h);
+      break;
+    case '*':
+      addRect(cx - w, cy - t * 0.4, cx + w, cy + t * 0.4);
+      addRect(cx - t * 0.4, cy - h, cx + t * 0.4, cy + h);
+      outPath.moveTo(cx - w * 0.65, cy - h * 0.65);
+      outPath.lineTo(cx - w * 0.65 + t * 0.6, cy - h * 0.65);
+      outPath.lineTo(cx + w * 0.65, cy + h * 0.65);
+      outPath.lineTo(cx + w * 0.65 - t * 0.6, cy + h * 0.65);
+      outPath.close();
+      outPath.moveTo(cx - w * 0.65, cy + h * 0.65);
+      outPath.lineTo(cx - w * 0.65 + t * 0.6, cy + h * 0.65);
+      outPath.lineTo(cx + w * 0.65, cy - h * 0.65);
+      outPath.lineTo(cx + w * 0.65 - t * 0.6, cy - h * 0.65);
+      outPath.close();
+      break;
+    case '#':
+      addRect(cx - w, cy + h * 0.3 - t * 0.4, cx + w, cy + h * 0.3 + t * 0.4);
+      addRect(cx - w, cy - h * 0.3 - t * 0.4, cx + w, cy - h * 0.3 + t * 0.4);
+      addRect(cx - w * 0.35 - t * 0.4, cy - h, cx - w * 0.35 + t * 0.4, cy + h);
+      addRect(cx + w * 0.35 - t * 0.4, cy - h, cx + w * 0.35 + t * 0.4, cy + h);
+      break;
+    case '0': {
+      outPath.moveTo(cx - w, cy - h);
+      outPath.lineTo(cx + w, cy - h);
+      outPath.lineTo(cx + w, cy + h);
+      outPath.lineTo(cx - w, cy + h);
+      outPath.close();
+      const iw = Math.max(1, w - t * 1.1);
+      const ih = Math.max(1, h - t * 1.1);
+      outPath.moveTo(cx - iw, cy - ih);
+      outPath.lineTo(cx - iw, cy + ih);
+      outPath.lineTo(cx + iw, cy + ih);
+      outPath.lineTo(cx + iw, cy - ih);
+      outPath.close();
+      break;
+    }
+    case '1':
+      addRect(cx - t * 0.5, cy - h, cx + t * 0.5, cy + h);
+      outPath.moveTo(cx - t * 0.5, cy + h);
+      outPath.lineTo(cx - w * 0.65, cy + h * 0.65);
+      outPath.lineTo(cx - w * 0.65, cy + h * 0.85);
+      outPath.lineTo(cx - t * 0.5, cy + h);
+      outPath.close();
+      addRect(cx - w * 0.6, cy - h, cx + w * 0.6, cy - h + t * 0.8);
+      break;
+    case 'X':
+      outPath.moveTo(cx - w, cy - h);
+      outPath.lineTo(cx - w + t * 0.8, cy - h);
+      outPath.lineTo(cx + w, cy + h);
+      outPath.lineTo(cx + w - t * 0.8, cy + h);
+      outPath.close();
+      outPath.moveTo(cx - w, cy + h);
+      outPath.lineTo(cx - w + t * 0.8, cy + h);
+      outPath.lineTo(cx + w, cy - h);
+      outPath.lineTo(cx + w - t * 0.8, cy - h);
+      outPath.close();
+      break;
+    default:
+      addRect(cx - w * 0.8, cy - h * 0.8, cx + w * 0.8, cy + h * 0.8);
+      break;
+  }
+}
+
+/**
+ * Procedural ASCII Conversion: Reconstructs the letters themselves from a matrix
+ * of tiny vector ASCII characters.
+ */
+export function transformASCII(path: opentype.Path, config: ASCIIConfig): opentype.Path {
+  const outPath = new opentype.Path();
+  const bbox = path.getBoundingBox();
+  const minX = bbox.x1;
+  const maxX = bbox.x2;
+  const minY = bbox.y1;
+  const maxY = bbox.y2;
+  const contours = flattenPathToContours(path, 14);
+  if (contours.length === 0) return outPath;
+
+  const cSize = Math.max(20, Math.min(80, config.charSize));
+  const scale = Math.max(0.5, Math.min(1.0, config.scale));
+  const threshold = Math.max(0.1, Math.min(0.8, config.fillThreshold));
+  const effectiveSize = cSize * scale;
+
+  // Grid bounds snapped to cell size
+  const startX = Math.floor(minX / cSize) * cSize;
+  const endX = Math.ceil(maxX / cSize) * cSize;
+  const startY = Math.floor(minY / cSize) * cSize;
+  const endY = Math.ceil(maxY / cSize) * cSize;
+
+  let colIdx = 0;
+  for (let gx = startX; gx <= endX; gx += cSize) {
+    let rowIdx = 0;
+    for (let gy = startY; gy <= endY; gy += cSize) {
+      const cx = gx + cSize / 2;
+      const cy = gy + cSize / 2;
+
+      // 5-point sub-grid sampling for density estimation
+      const offset = cSize * 0.28;
+      const samplePoints: Point[] = [
+        { x: cx, y: cy },
+        { x: cx - offset, y: cy - offset },
+        { x: cx + offset, y: cy - offset },
+        { x: cx - offset, y: cy + offset },
+        { x: cx + offset, y: cy + offset },
+      ];
+
+      let insideCount = 0;
+      for (const sp of samplePoints) {
+        if (isPointInGlyphContours(sp, contours)) {
+          insideCount++;
+        }
+      }
+
+      const coverage = insideCount / samplePoints.length;
+
+      if (coverage >= threshold) {
+        let charToDraw = '#';
+
+        if (config.charset === 'density') {
+          if (coverage <= 0.3) charToDraw = '.';
+          else if (coverage <= 0.5) charToDraw = ':';
+          else if (coverage <= 0.7) charToDraw = '+';
+          else if (coverage <= 0.85) charToDraw = '*';
+          else charToDraw = '#';
+        } else if (config.charset === 'binary') {
+          charToDraw = (colIdx + rowIdx) % 2 === 0 ? '0' : '1';
+        } else if (config.charset === 'matrix') {
+          const mChars = ['0', '1', 'X', '+', '#', '-'];
+          charToDraw = mChars[(colIdx * 3 + rowIdx * 7) % mChars.length];
+        } else if (config.charset === 'alphanumeric') {
+          const aChars = ['X', '0', '1', '#', '+', '*'];
+          charToDraw = aChars[(colIdx + rowIdx * 2) % aChars.length];
+        }
+
+        appendMicroAscii(outPath, charToDraw, cx, cy, effectiveSize);
+      }
+      rowIdx++;
+    }
+    colIdx++;
+  }
+
+  // Fallback: If grid was too coarse or empty, fallback to at least center characters
+  if (outPath.commands.length === 0) {
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    appendMicroAscii(outPath, '#', cx, cy, cSize);
+  }
+
+  return outPath;
+}
+
+/**
+ * Procedural Pseudo-3D: Extrudes letterforms along an isometric projection angle,
+ * generating layered depth ribbons and receding shadow volume.
+ */
+export function transformPseudo3D(path: opentype.Path, config: Pseudo3DConfig): opentype.Path {
+  const outPath = new opentype.Path();
+  const rad = (config.angle * Math.PI) / 180;
+  const totalDx = Math.cos(rad) * config.depth;
+  const totalDy = Math.sin(rad) * config.depth;
+  const layers = Math.max(1, Math.min(10, config.layers));
+
+  const translateCommands = (cmds: opentype.PathCommand[], ox: number, oy: number) => {
+    for (const cmd of cmds) {
+      if (cmd.type === 'M') {
+        outPath.moveTo(cmd.x + ox, cmd.y + oy);
+      } else if (cmd.type === 'L') {
+        outPath.lineTo(cmd.x + ox, cmd.y + oy);
+      } else if (cmd.type === 'C') {
+        outPath.curveTo(cmd.x1 + ox, cmd.y1 + oy, cmd.x2 + ox, cmd.y2 + oy, cmd.x + ox, cmd.y + oy);
+      } else if (cmd.type === 'Q') {
+        outPath.quadraticCurveTo(cmd.x1 + ox, cmd.y1 + oy, cmd.x + ox, cmd.y + oy);
+      } else if (cmd.type === 'Z') {
+        outPath.close();
+      }
+    }
+  };
+
+  if (config.style === 'stacked') {
+    // Stepped extrusion shadow layers from back to front
+    for (let l = layers; l >= 1; l--) {
+      const factor = l / layers;
+      translateCommands(path.commands, totalDx * factor, totalDy * factor);
+    }
+    // Top front face
+    translateCommands(path.commands, 0, 0);
+  } else if (config.style === 'isometric') {
+    // Dense stepped extrusion so side ribbons are completely solid
+    const stepCount = Math.max(layers * 2, Math.ceil(config.depth / 6));
+    for (let s = stepCount; s >= 1; s--) {
+      const factor = s / stepCount;
+      translateCommands(path.commands, totalDx * factor, totalDy * factor);
+    }
+    // Top front face
+    translateCommands(path.commands, 0, 0);
+  } else {
+    // wire-offset: Extruded depth silhouette + front face
+    translateCommands(path.commands, totalDx, totalDy);
+    translateCommands(path.commands, 0, 0);
+  }
+
+  return outPath;
+}
+
+/**
  * Filter glyphs for batch processing based on scope
  */
 export function isGlyphInScope(
@@ -1003,6 +1454,128 @@ export const STYLE_PRESETS: PresetItem[] = [
         interlaceShift: 8,
         beamRoll: 28,
         seed: 314,
+      },
+    },
+  },
+  {
+    id: 'haze-tarmac-mirage',
+    name: 'Tarmac Mirage Heat Haze',
+    category: 'artistic',
+    description: 'Thermal convection mirage shimmering and stretching letters above hot pavement',
+    config: {
+      mode: 'heat-haze',
+      heatHaze: {
+        wobble: 32,
+        verticalStretch: 28,
+        frequency: 0.016,
+        groundTurbulence: 1.6,
+        seed: 42,
+      },
+    },
+  },
+  {
+    id: 'haze-desert-convection',
+    name: 'Desert Sun Thermal Updraft',
+    category: 'artistic',
+    description: 'High-frequency fluid atmospheric wobble with buoyant vertical elongation',
+    config: {
+      mode: 'heat-haze',
+      heatHaze: {
+        wobble: 48,
+        verticalStretch: 40,
+        frequency: 0.024,
+        groundTurbulence: 2.1,
+        seed: 109,
+      },
+    },
+  },
+  {
+    id: 'ascii-density-matrix',
+    name: 'Micro-ASCII Density Matrix',
+    category: 'artistic',
+    description: 'Letters reconstructed entirely from tiny vector ASCII characters (. : + * #)',
+    config: {
+      mode: 'ascii',
+      ascii: {
+        charSize: 34,
+        charset: 'density',
+        fillThreshold: 0.22,
+        scale: 0.85,
+      },
+    },
+  },
+  {
+    id: 'ascii-cyber-binary',
+    name: 'Binary Cyber Code 01',
+    category: 'artistic',
+    description: 'Deconstructed letterforms composed of tiny matrix 0 and 1 glyphs',
+    config: {
+      mode: 'ascii',
+      ascii: {
+        charSize: 38,
+        charset: 'binary',
+        fillThreshold: 0.28,
+        scale: 0.88,
+      },
+    },
+  },
+  {
+    id: 'ascii-retro-terminal',
+    name: 'Retro Terminal ASCII Grid',
+    category: 'artistic',
+    description: 'Dense terminal micro-ASCII characters forming crisp glyph silhouettes',
+    config: {
+      mode: 'ascii',
+      ascii: {
+        charSize: 28,
+        charset: 'matrix',
+        fillThreshold: 0.2,
+        scale: 0.9,
+      },
+    },
+  },
+  {
+    id: 'pseudo-3d-isometric',
+    name: 'Isometric Pop-Art 3D',
+    category: 'artistic',
+    description: 'Bold 45° isometric extruded depth ribbons with solid stepped shadow volume',
+    config: {
+      mode: 'pseudo-3d',
+      pseudo3D: {
+        depth: 55,
+        angle: 45,
+        layers: 6,
+        style: 'isometric',
+      },
+    },
+  },
+  {
+    id: 'pseudo-3d-arcade-shadow',
+    name: 'Arcade Stepped 3D Depth',
+    category: 'artistic',
+    description: 'Layered retro video game 3D extrusion descending at 135° angle',
+    config: {
+      mode: 'pseudo-3d',
+      pseudo3D: {
+        depth: 70,
+        angle: 135,
+        layers: 5,
+        style: 'stacked',
+      },
+    },
+  },
+  {
+    id: 'pseudo-3d-chasm-wire',
+    name: 'Perspective Chasm Offset',
+    category: 'artistic',
+    description: 'Deep bottom-right perspective offset creating monumental 3D letter presence',
+    config: {
+      mode: 'pseudo-3d',
+      pseudo3D: {
+        depth: 85,
+        angle: 315,
+        layers: 8,
+        style: 'isometric',
       },
     },
   },

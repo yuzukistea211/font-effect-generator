@@ -13,6 +13,7 @@ import { GlyphGrid } from './components/GlyphGrid';
 import { PreviewDashboard } from './components/PreviewDashboard';
 import { FontMetadataModal } from './components/FontMetadataModal';
 import { CssSnippetModal } from './components/CssSnippetModal';
+import { FontSizeModal } from './components/FontSizeModal';
 import type {
   BatchStyleConfig,
   FontMetadata,
@@ -29,6 +30,10 @@ import {
   sanitizeFontLayoutTables,
 } from './utils/fontExport';
 import { mergePathPointsByDistance, simplifyPathRDP } from './utils/pointMerger';
+import {
+  calculateFontSizeDetails,
+  getFontExactByteLength,
+} from './utils/fontSizeEstimator';
 import {
   Upload,
   AlertCircle,
@@ -106,6 +111,25 @@ const DEFAULT_BATCH_CONFIG: BatchStyleConfig = {
     beamRoll: 8,
     seed: 42,
   },
+  heatHaze: {
+    wobble: 32,
+    verticalStretch: 28,
+    frequency: 0.016,
+    groundTurbulence: 1.6,
+    seed: 42,
+  },
+  ascii: {
+    charSize: 34,
+    charset: 'density',
+    fillThreshold: 0.22,
+    scale: 0.85,
+  },
+  pseudo3D: {
+    depth: 55,
+    angle: 45,
+    layers: 6,
+    style: 'isometric',
+  },
 };
 
 const DEFAULT_PREVIEW_SETTINGS: PreviewSettings = {
@@ -148,10 +172,26 @@ export default function App() {
 
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState<boolean>(false);
   const [isCssModalOpen, setIsCssModalOpen] = useState<boolean>(false);
+  const [isFontSizeModalOpen, setIsFontSizeModalOpen] = useState<boolean>(false);
+  const [currentFontByteLength, setCurrentFontByteLength] = useState<number>(0);
 
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const [glyphRevision, setGlyphRevision] = useState<number>(0);
   const [liveFontFamily, setLiveFontFamily] = useState<string>('StylizedFontLive');
+
+  // Maintain live calculation of font binary size whenever font is edited or changed
+  useEffect(() => {
+    if (!font) {
+      setCurrentFontByteLength(0);
+      return;
+    }
+    try {
+      const len = getFontExactByteLength(font);
+      setCurrentFontByteLength(len);
+    } catch {
+      // ignore
+    }
+  }, [font, glyphRevision]);
 
   const refreshLiveFontFace = useCallback(async (fontToInject: opentype.Font) => {
     sanitizeFontLayoutTables(fontToInject);
@@ -203,6 +243,7 @@ export default function App() {
         }
 
         originalBufferRef.current = buffer.slice(0);
+        setCurrentFontByteLength(buffer.byteLength);
 
         const parsedFont = opentype.parse(buffer);
         const origParsedFont = opentype.parse(buffer.slice(0));
@@ -404,6 +445,30 @@ export default function App() {
     }
     return matched;
   }, [font, batchConfig.scope, batchConfig.customChars, selectedGlyphIndex, glyphRevision]);
+
+  // Compute live approximation and breakdown of font file size & batch effect impact
+  const originalBufferLength = originalBufferRef.current?.byteLength || 0;
+
+  const sizeDetails = useMemo(() => {
+    return calculateFontSizeDetails(
+      font,
+      originalFont,
+      originalBufferLength,
+      batchConfig,
+      targetGlyphs,
+      currentGlyph || null,
+      currentFontByteLength > 0 ? currentFontByteLength : undefined
+    );
+  }, [
+    font,
+    originalFont,
+    originalBufferLength,
+    batchConfig,
+    targetGlyphs,
+    currentGlyph,
+    currentFontByteLength,
+    glyphRevision,
+  ]);
 
   // Batch styling execution
   const handleApplyBatch = useCallback(async () => {
@@ -742,10 +807,12 @@ export default function App() {
         setActiveView={setActiveView}
         hasUnsavedChanges={hasUnsavedChanges}
         onOpenCssSnippet={() => setIsCssModalOpen(true)}
+        sizeDetails={sizeDetails}
+        onOpenFontSizeModal={() => setIsFontSizeModalOpen(true)}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-[1700px] w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
+      {/* Main Container - Wider and Shorter */}
+      <div role="main" className="flex-1 max-w-[1780px] max-h-[1000px] w-full mx-auto px-3 sm:px-5 py-3 sm:py-4 flex flex-col gap-4">
         {/* Loading State */}
         {isLoadingFont && (
           <div className="flex items-center justify-center p-16 bg-[#f4f4f1] border border-zinc-300">
@@ -778,12 +845,12 @@ export default function App() {
         {/* Content Views */}
         {!isLoadingFont && font && (
           <>
-            {/* VIEW 1: Vector Editor & Batch Studio (SIDE-BY-SIDE) */}
+            {/* VIEW 1: Vector Editor & Batch Studio (SIDE-BY-SIDE - Wider Canvas, Shorter Vertical Spacing) */}
             {activeView === 'editor' && (
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-4">
                 {/* Top Row: Batch Styling Engine and Font Previewer Side-by-Side */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                  <div className="flex flex-col">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+                  <div className="flex flex-col xl:col-span-5">
                     <BatchProcessingPanel
                       config={batchConfig}
                       onChangeConfig={setBatchConfig}
@@ -799,10 +866,12 @@ export default function App() {
                       targetGlyphCount={targetGlyphs.length}
                       livePreviewEnabled={livePreviewEnabled}
                       onToggleLivePreview={setLivePreviewEnabled}
+                      sizeDetails={sizeDetails}
+                      onOpenFontSizeModal={() => setIsFontSizeModalOpen(true)}
                     />
                   </div>
 
-                  <div className="flex flex-col">
+                  <div className="flex flex-col xl:col-span-7">
                     <GlyphCanvasEditor
                       glyph={currentGlyph}
                       originalGlyph={currentOriginalGlyph}
@@ -839,7 +908,7 @@ export default function App() {
             )}
           </>
         )}
-      </main>
+      </div>
 
       {/* Floating Toast Notification */}
       {toastMessage && (
@@ -857,6 +926,22 @@ export default function App() {
         onSave={(updated) => {
           setMetadata(updated);
           showToast('Updated font properties');
+        }}
+        sizeDetails={sizeDetails}
+      />
+
+      <FontSizeModal
+        isOpen={isFontSizeModalOpen}
+        onClose={() => setIsFontSizeModalOpen(false)}
+        sizeDetails={sizeDetails}
+        fontName={metadata.family || 'Untitled Font'}
+        glyphCount={metadata.glyphCount}
+        onQuickOptimize={(type) => {
+          if (type === 'simplify') {
+            handleBatchSimplifyPath(3.0);
+          } else if (type === 'merge') {
+            handleBatchMergeNodes(15.0);
+          }
         }}
       />
 

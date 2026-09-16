@@ -37,7 +37,7 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
   onUpdateAdvanceWidth,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState<number>(1.2);
+  const [zoom, setZoom] = useState<number>(1.0);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -54,11 +54,18 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
   const capHeight = font?.tables?.os2?.sCapHeight || 700;
   const advanceWidth = glyph?.advanceWidth || unitsPerEm;
 
-  // ViewBox bounds
-  const vbX = -150;
-  const vbY = -ascender - 100;
-  const vbWidth = Math.max(advanceWidth + 300, 1100);
-  const vbHeight = ascender - descender + 200;
+  // Widescreen, shorter viewBox bounds with generous padding so the head (ascender) and tail (descender) fit on screen
+  const verticalSpan = Math.max(ascender - descender, 800);
+  const verticalMargin = Math.max(verticalSpan * 0.28, 260); // Ample padding above ascender and below descender
+  const vbHeight = verticalSpan + verticalMargin * 2;
+  const midY = -(ascender + descender) / 2; // Midpoint in SVG scale(1, -1) inverted coordinate system
+  const vbY = midY - vbHeight / 2;
+
+  // Make viewBox wider than it is tall (1.6:1 aspect ratio) so it is wider & shorter, fitting desktop screens
+  const targetWidth = Math.max(vbHeight * 1.6, advanceWidth + 800, 2000);
+  const vbWidth = targetWidth;
+  const midX = advanceWidth / 2;
+  const vbX = midX - vbWidth / 2;
 
   // Mouse pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -80,7 +87,7 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
   const handleMouseUp = () => setIsPanning(false);
 
   const resetView = () => {
-    setZoom(1.2);
+    setZoom(1.0);
     setPan({ x: 0, y: 0 });
   };
 
@@ -173,7 +180,7 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
   const currentPointsCount = activePath?.commands?.length || glyph.path?.commands?.length || 0;
 
   return (
-    <div className="bg-[#f4f4f1] border border-zinc-300 p-5 sm:p-6 flex flex-col gap-4 text-zinc-900 select-none h-full">
+    <div className="bg-[#f4f4f1] border border-zinc-300 p-4 sm:p-5 flex flex-col gap-3.5 text-zinc-900 select-none h-full">
       {/* Top Bar: Glyph Info & Viewing Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-zinc-300">
         <div className="flex items-center gap-3">
@@ -296,7 +303,7 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
           {/* Zoom controls */}
           <div className="flex items-center border border-zinc-300 bg-white">
             <button
-              onClick={() => setZoom((z) => Math.max(0.4, z - 0.2))}
+              onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
               className="p-1 text-zinc-600 hover:bg-zinc-100"
               title="Zoom Out"
             >
@@ -306,7 +313,7 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
               {Math.round(zoom * 100)}%
             </span>
             <button
-              onClick={() => setZoom((z) => Math.min(5, z + 0.2))}
+              onClick={() => setZoom((z) => Math.min(4, Number((z + 0.15).toFixed(2))))}
               className="p-1 text-zinc-600 hover:bg-zinc-100"
               title="Zoom In"
             >
@@ -314,10 +321,11 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
             </button>
             <button
               onClick={resetView}
-              className="p-1 text-zinc-600 hover:bg-zinc-100 border-l border-zinc-300"
-              title="Reset View"
+              className="flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold text-zinc-700 hover:bg-zinc-100 border-l border-zinc-300"
+              title="Fit Glyph to Screen (Reset Zoom & Pan)"
             >
-              <Maximize2 className="w-3 h-3" />
+              <Maximize2 className="w-2.5 h-2.5" />
+              <span>FIT</span>
             </button>
           </div>
 
@@ -335,18 +343,18 @@ export const GlyphCanvasEditor: React.FC<GlyphCanvasEditorProps> = ({
         </div>
       </div>
 
-      {/* Main Vector Stage (Sharp Rectangular Canvas) */}
+      {/* Main Vector Stage (Sharp Rectangular Canvas - Wider and Shorter) */}
       <div
         ref={containerRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        className="relative min-h-[440px] lg:min-h-[500px] bg-white border border-zinc-300 cursor-grab active:cursor-grabbing overflow-hidden flex items-center justify-center flex-1"
+        className="relative min-h-[300px] sm:min-h-[340px] lg:min-h-[360px] max-h-[440px] bg-white border border-zinc-300 cursor-grab active:cursor-grabbing overflow-hidden flex items-center justify-center flex-1 w-full"
       >
         <svg
           viewBox={`${vbX} ${vbY} ${vbWidth} ${vbHeight}`}
-          className="w-full h-full max-h-[560px]"
+          className="w-full h-full max-h-[420px]"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
